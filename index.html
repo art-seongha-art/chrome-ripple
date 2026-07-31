@@ -173,13 +173,13 @@ const P = {
   motionGain: 2.2,     // 손짓 감도(움직임)
   presence:   0.40,    // 머무름 감도(가만히 든 손도 누른다)
   press:      0.55,    // 눌리는 깊이 (시뮬 단위)
-  damping:    0.9970,  // 물결 지속
-  speed:      0.30,    // 전파 속도 (0.5 넘으면 발산)
+  damping:    0.9990,  // 물결 지속
+  speed:      0.32,    // 전파 속도 (0.5 넘으면 발산)
   amp:        0.047,   // 파고 (시뮬 단위 → 미터)
   swell:      0.0072,  // 얼어붙은 물결 — 사진의 울퉁불퉁한 상판
-  dense:      1.15,    // 그 물결의 밀도 (작으면 넓게, 크면 촘촘하게)
-  micro:      0.00039, // 잔물결(광택 떨림) — 크면 조명이 깜빡이는 것처럼 보인다
-  microSize:  3.30,    // 잔물결 크기 (키우면 파장이 길어진다)
+  dense:      1.70,    // 그 물결의 밀도 (작으면 넓게, 크면 촘촘하게)
+  micro:      0.00033, // 잔물결(광택 떨림) — 크면 조명이 깜빡이는 것처럼 보인다
+  microSize:  2.10,    // 잔물결 크기 (키우면 파장이 길어진다)
   slabW:      3.00,    // 작품 길이
   slabD:      REF_D,   // 작품 폭
   slabH:      REF_H,   // 작품 높이
@@ -191,8 +191,10 @@ const P = {
   bg:         0.0,     // 배경 비침 — 0이면 안개와 같은 검정이라 먼 지평선이 사라진다
   keyI:       15,      // 바닥 스포트(그림자를 만드는 실제 조명)
   rimI:       11,      // 측면 스포트
+  sharp:      1.50,    // 선명도 — 화면 픽셀의 몇 배로 그릴지 (2.0이 가장 선명·가장 무겁다)
   exposure:   0.95,    // 노출 — 전시장 프로젝터에 맞추는 값
-  bloom:      0.10,
+  bloom:      0.35,    // 윤슬 세기
+  bloomTh:    2.20,    // 윤슬 문턱 — 낮출수록 수면이 넓게 반짝인다
   grain:      0.045,
   autoCam:    true,
   mirror:     true,
@@ -209,7 +211,7 @@ const T = {
 };
 const TOGGLES = [
   ['webcam','웹캠'], ['camMove','카메라 움직임'], ['beams','광선(원뿔)'], ['dust','먼지 입자'],
-  ['pool','빛웅덩이'], ['bloom','블룸'], ['grade','그레인·비네트'], ['cube','큐브'],
+  ['pool','빛웅덩이'], ['bloom','윤슬(블룸)'], ['grade','그레인·비네트'], ['cube','큐브'],
   ['sim','파문(시뮬)'], ['swell','너울'], ['wake','손짓 노출 반응'],
 ];
 
@@ -548,14 +550,14 @@ let motes;
   // 가까운 것과 아주 먼 것을 모두 지우는 전용 셰이더를 쓴다.
   const m = new THREE.ShaderMaterial({
     // uSize는 '1m 거리에서의 픽셀 크기'다. 화면 높이·화각과 무관하게 대략 맞으면 된다.
-    uniforms:{ uColor:{value:new THREE.Color(0xdce8ff)}, uOpacity:{value:0.30}, uSize:{value:20} },
+    uniforms:{ uColor:{value:new THREE.Color(0xdce8ff)}, uOpacity:{value:0.26}, uSize:{value:9} },
     vertexShader:`
       uniform float uSize; varying float vA;
       void main(){
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
         float d = -mv.z;
         vA = smoothstep(1.2, 2.8, d) * smoothstep(13.0, 6.0, d);
-        gl_PointSize = clamp(uSize / max(d, 0.001), 1.0, 9.0);
+        gl_PointSize = clamp(uSize / max(d, 0.001), 1.0, 4.0);
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader:`
@@ -1292,8 +1294,10 @@ const CTRL = [
     ['envI','조명 세기(전체)', 0.2, 2.5, 0.05],
     ['envRot','환경 회전', 0, 6.28, 0.02],
     ['bg','배경 비침', 0, 0.35, 0.005],
+    ['sharp','선명도', 0.75, 2.0, 0.05],
     ['exposure','노출', 0.2, 2.0, 0.05],
-    ['bloom','번짐', 0, 1.6, 0.02],
+    ['bloom','윤슬 세기', 0, 2.4, 0.02],
+    ['bloomTh','윤슬 문턱', 0.20, 3.00, 0.02],
     ['grain','필름 입자', 0, 0.16, 0.005],
   ]],
 ];
@@ -1374,6 +1378,7 @@ for (const [secName, items] of CTRL){
     inp.addEventListener('input', ()=>{
       P[k] = parseFloat(inp.value);
       if (k.startsWith('slab') || k === 'cubePos') rebuildSlab();   // 치수·위치가 바뀌면 다시 만든다
+      if (k === 'sharp') onResize();
       applyParams();
       if (k.startsWith('lamp')) scheduleBake();   // 조명이 바뀌면 환경맵을 다시 굽는다
     });
@@ -1415,6 +1420,7 @@ function applyParams(){
   scene.backgroundRotation  = new THREE.Euler(0, P.envRot, 0);
   applyBackground();
   bloom.strength = P.bloom;
+  bloom.threshold = P.bloomTh;
   gradePass.uniforms.uGrain.value = P.grain;
   for (const k in valEl){
     valEl[k].textContent = P[k] < 0.01 ? P[k].toFixed(5) : P[k] < 1 ? P[k].toFixed(3) : P[k].toFixed(2);
@@ -1593,23 +1599,29 @@ function tick(now){
   }
 }
 
-// 창 크기가 아니라 '캔버스가 실제로 차지한 크기'를 따라간다.
-// window의 resize만 듣고 있으면, 패널이 접히거나 다른 배율의 모니터로 옮겨갈 때
-// 그리기 버퍼만 옛 크기로 남아 화면 한쪽이 검게 잘린다.
+// 크기는 뷰포트(innerWidth/innerHeight)를 기준으로 잡고, 캔버스의 CSS 크기까지
+// 픽셀로 못 박는다. 퍼센트(100%)로 두면 전체화면에서 요소가 예전 높이로 남아
+// 화면 아래에 브라우저 상단 크기만큼 검정 띠가 생긴다.
+let lastW = 0, lastH = 0, lastDpr = 0;
 function onResize(){
-  const w = canvas.clientWidth  || innerWidth;
-  const h = canvas.clientHeight || innerHeight;
-  const dpr = Math.min(devicePixelRatio || 1, degraded ? 1 : 1.5);
+  const w = Math.max(1, Math.round(innerWidth));
+  const h = Math.max(1, Math.round(innerHeight));
+  const dpr = Math.min(devicePixelRatio || 1, degraded ? 1 : P.sharp);
+  if (w === lastW && h === lastH && dpr === lastDpr) return;
+  lastW = w; lastH = h; lastDpr = dpr;
+  canvas.style.width  = w + 'px';
+  canvas.style.height = h + 'px';
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setPixelRatio(dpr);
-  renderer.setSize(w, h, false);          // CSS 크기는 건드리지 않는다(이미 100%)
+  renderer.setSize(w, h, false);          // CSS 크기는 위에서 직접 정한다
   composer.setPixelRatio(dpr);
   composer.setSize(w, h);
   bloom.setSize(w, h);
 }
 addEventListener('resize', onResize);
-new ResizeObserver(onResize).observe(canvas);
+new ResizeObserver(onResize).observe(document.documentElement);
+if (window.visualViewport) visualViewport.addEventListener('resize', onResize);
 // 전체화면은 전환이 끝난 뒤에야 최종 크기가 나온다 — 한 박자 뒤에 한 번 더 맞춘다
 addEventListener('fullscreenchange', ()=>{ onResize(); setTimeout(onResize, 120); setTimeout(onResize, 400); });
 

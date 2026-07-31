@@ -181,6 +181,7 @@ const P = {
   slabW:      3.00,    // 작품 길이
   slabD:      REF_D,   // 작품 폭
   slabH:      REF_H,   // 작품 높이
+  cubePos:    0.167,   // 큐브 좌우 위치 (0 = 한가운데, ±0.5 = 양 끝)
   rough:      0.115,   // 금속 거칠기
   env:        'power', // 반사할 환경(HDRI)
   envI:       0.55,    // 조명 세기 — HDRI를 그대로 쓰면 거울면이 타버린다
@@ -822,8 +823,7 @@ const cube = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1, 2, 2, 2), cubeMat);
 cube.castShadow = true;
 const cubeBase = new THREE.Quaternion().setFromUnitVectors(
   new THREE.Vector3(1,1,1).normalize(), new THREE.Vector3(0,1,0));   // 몸통 대각선을 세운다
-const cubeLean = new THREE.Quaternion().setFromAxisAngle(
-  new THREE.Vector3(0.35, 0, 1).normalize(), 0.22);                  // 사진처럼 기울여 세운다
+// 기울이지 않는다 — 몸통 대각선을 세워 꼭짓점 하나로 똑바로 선다
 scene.add(cube);
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -857,7 +857,9 @@ function rebuildSlab(){
 
   cube.geometry.dispose();
   cube.geometry = new THREE.BoxGeometry(CUBE, CUBE, CUBE, 2, 2, 2);
-  CUBE_X = SLAB_W / 6;  CUBE_Z = SLAB_D * 0.025; CUBE_SINK = CUBE * 0.163;   // 왼쪽에서 2/3 지점
+  // 꼭짓점이 수면에 '살짝 닿는' 정도만 잠긴다 — 파묻히지 않는다
+  CUBE_X = SLAB_W * P.cubePos;  CUBE_Z = 0;  CUBE_SINK = 0.012;
+  cube.position.x = CUBE_X; cube.position.z = CUBE_Z;   // 높이는 매 프레임 갱신된다
 
   waterU.uSize.value.set(SLAB_W, SLAB_D);
   surfPlane.constant = -TOP_Y;
@@ -877,8 +879,9 @@ const fByte = new Uint8Array(FRC_W * FRC_H);
 
 // 화면 좌표 — 웹캠이 본 움직임. 화면 비율(16:9)에 맞춰 두어야 손 모양이 눌리지 않는다.
 const MW = 192, MH = 108;
-const mot    = new Float32Array(MW * MH);
-const motTmp = new Float32Array(MW * MH);
+const mot    = new Float32Array(MW * MH);   // 감쇠하며 누적되는 장
+const motRaw = new Float32Array(MW * MH);   // 이번 프레임에 새로 본 것만
+const motTmp = new Float32Array(MW * MH);   // 흐리기용 임시
 const forceTex = new THREE.DataTexture(fByte, FRC_W, FRC_H, THREE.RedFormat, THREE.UnsignedByteType);
 forceTex.minFilter = forceTex.magFilter = THREE.LinearFilter;
 forceTex.needsUpdate = true;
@@ -922,7 +925,7 @@ function setWebcam(on){
   if (s) for (const t of s.getTracks()) t.stop();
   video.srcObject = null;
   camReady = false; camWarm = false; motionEnergy = 0;
-  fAcc.fill(0); mot.fill(0);
+  fAcc.fill(0); mot.fill(0); motRaw.fill(0);
   camnote.textContent = '웹캠 꺼짐 — 마우스와 무인 연주로 작동합니다.';
 }
 
@@ -962,6 +965,7 @@ function motionToForce(motion, presence){
 
 function sampleCamera(){
   if (!camReady || video.readyState < 2 || !video.videoWidth) return;
+  motRaw.fill(0);                       // 이번 프레임에 본 것만 담는다
   gctx.save();
   if (P.mirror){ gctx.translate(MW, 0); gctx.scale(-1, 1); }
   gctx.drawImage(video, 0, 0, MW, MH);
@@ -988,11 +992,12 @@ function sampleCamera(){
     if (f > 0){
       const row = (i / MW) | 0;
       const j = (P.flipV ? MH-1-row : row)*MW + (i % MW);   // 웹캠 위쪽 = 화면 위쪽
-      if (f > mot[j]) mot[j] = f;
+      if (f > motRaw[j]) motRaw[j] = f;
       energy += motion;
     }
   }
   blurMotion();          // 손은 가장자리만 잡혀 점점이 흩어진다 — 뭉쳐야 손으로 보인다
+  for (let i=0;i<mot.length;i++) if (motRaw[i] > mot[i]) mot[i] = motRaw[i];
   motionEnergy = motionEnergy*0.85 + (energy / (MW*MH) * 60) * 0.15;
   if (motionEnergy > 0.010) lastMotionAt = clock;
 }
@@ -1022,12 +1027,14 @@ function boxBlur(src, dst, w, h, r, horizontal){
     }
   }
 }
+// 반드시 '이번 프레임 원본'에만 건다.
+// 감쇠하며 누적되는 버퍼에 이득을 곱하면 매 프레임 커져서 화면이 굳어버린다.
 function blurMotion(){
-  boxBlur(mot, motTmp, MW, MH, 4, true);
-  boxBlur(motTmp, mot, MW, MH, 4, false);
-  boxBlur(mot, motTmp, MW, MH, 3, true);
-  boxBlur(motTmp, mot, MW, MH, 3, false);
-  for (let i=0;i<mot.length;i++) mot[i] *= 2.2;   // 흐리면 값이 낮아지므로 되살린다
+  boxBlur(motRaw, motTmp, MW, MH, 4, true);
+  boxBlur(motTmp, motRaw, MW, MH, 4, false);
+  boxBlur(motRaw, motTmp, MW, MH, 3, true);
+  boxBlur(motTmp, motRaw, MW, MH, 3, false);
+  for (let i=0;i<motRaw.length;i++) motRaw[i] *= 2.2;   // 흐리면 낮아지므로 한 번만 되살린다
 }
 
 /* 웹캠이 본 움직임(화면 좌표)을 수면 위로 옮긴다.
@@ -1053,10 +1060,10 @@ function projectMotionToSurface(){
       // 가장 가까운 칸 하나만 집으면 계단이 생긴다 — 네 칸을 섞는다
       const fx = Math.min(MW-1.001, Math.max(0, (sx*0.5 + 0.5) * MW - 0.5));
       const fy = Math.min(MH-1.001, Math.max(0, (sy*0.5 + 0.5) * MH - 0.5));
-      const x0 = fx|0, y0 = fy|0, tx = fx-x0, ty = fy-y0;
-      const r0 = y0*MW, r1 = r0 + MW;
-      const f = (mot[r0+x0]*(1-tx) + mot[r0+x0+1]*tx)*(1-ty)
-              + (mot[r1+x0]*(1-tx) + mot[r1+x0+1]*tx)*ty;
+      const ix = fx|0, iy = fy|0, tx = fx-ix, ty = fy-iy;   // 바깥 y0(수면 높이)와 이름이 겹치면 안 된다
+      const r0 = iy*MW, r1 = r0 + MW;
+      const f = (mot[r0+ix]*(1-tx) + mot[r0+ix+1]*tx)*(1-ty)
+              + (mot[r1+ix]*(1-tx) + mot[r1+ix+1]*tx)*ty;
       const k = j*FRC_W + i;
       if (f > fAcc[k]) fAcc[k] = f;
     }
@@ -1205,6 +1212,7 @@ const CTRL = [
     ['slabW','길이 (m)', 0.60, 4.00, 0.05],
     ['slabD','폭 (m)',   0.30, 2.00, 0.05],
     ['slabH','높이 (m)', 0.15, 1.20, 0.05],
+    ['cubePos','큐브 좌우', -0.45, 0.45, 0.005],
   ]],
   ['수면', [
     ['damping','물결 지속', 0.985, 0.9995, 0.0005],
@@ -1277,7 +1285,7 @@ for (const [secName, items] of CTRL){
     inp.type = 'range'; inp.min = min; inp.max = max; inp.step = step; inp.value = P[k];
     inp.addEventListener('input', ()=>{
       P[k] = parseFloat(inp.value);
-      if (k.startsWith('slab')) rebuildSlab();    // 치수가 바뀌면 형태를 다시 만든다
+      if (k.startsWith('slab') || k === 'cubePos') rebuildSlab();   // 치수·위치가 바뀌면 다시 만든다
       applyParams();
       if (k.startsWith('lamp')) scheduleBake();   // 조명이 바뀌면 환경맵을 다시 굽는다
     });
@@ -1337,7 +1345,7 @@ btn('b_mirror').onclick = ()=>{ P.mirror = !P.mirror; syncUI(); };
 btn('b_flip').onclick   = ()=>{ P.flipV = !P.flipV; syncUI(); };
 btn('b_prev').onclick   = ()=>{ P.showMotion = !P.showMotion;
                                 btn('mwrap').classList.toggle('hidden', !P.showMotion); syncUI(); };
-btn('b_calm').onclick   = ()=>{ sim.clear(); fAcc.fill(0); mot.fill(0); };
+btn('b_calm').onclick   = ()=>{ sim.clear(); fAcc.fill(0); mot.fill(0); motRaw.fill(0); };
 rebuildSlab();                     // 형태를 처음 한 번 만든다 (치수 슬라이더가 다시 부른다)
 applyToggles(); syncUI();
 const wantEnv = P.env;
@@ -1409,7 +1417,7 @@ function tick(now){
   projectMotionToSurface();          // 화면에서 본 손짓 → 수면 위 그 자리
   if (clock - lastMotionAt > P.idleSec) ghostPerform(clock);
   // 큐브가 닿은 자리에서는 늘 파문이 번진다
-  stamp(CUBE_X/SLAB_W + 0.5, 0.5 - CUBE_Z/SLAB_D, 0.17, 0.26 + 0.10*Math.sin(clock*0.9));
+  stamp(CUBE_X/SLAB_W + 0.5, 0.5 - CUBE_Z/SLAB_D, 0.09, 0.22 + 0.08*Math.sin(clock*0.9));
   for (let i=0;i<fAcc.length;i++) fByte[i] = Math.min(255, fAcc[i]*255) | 0;
   forceTex.needsUpdate = true;
 
@@ -1422,10 +1430,10 @@ function tick(now){
   waterU.uTime.value = clock;
 
   // ── 큐브는 수면에 얹힌 것처럼 아주 느리게 흔들린다
-  const rock = new THREE.Quaternion().setFromEuler(new THREE.Euler(
-    Math.sin(clock*0.31)*0.020, Math.sin(clock*0.17)*0.05, Math.sin(clock*0.23 + 1.1)*0.024));
-  cube.quaternion.copy(rock).multiply(cubeLean).multiply(cubeBase);
-  cube.position.y = TOP_Y + CUBE*Math.sqrt(3)/2 - CUBE_SINK + Math.sin(clock*0.29)*0.006;
+  // 서 있는 느낌을 해치지 않도록 기울지 않고 아주 느리게 돌기만 한다
+  const spin = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, clock*0.035, 0));
+  cube.quaternion.copy(spin).multiply(cubeBase);
+  cube.position.y = TOP_Y + CUBE*Math.sqrt(3)/2 - CUBE_SINK + Math.sin(clock*0.29)*0.003;
 
   // ── 손짓에 따라 공간이 아주 살짝 깨어난다
   // 손짓에 따라 아주 천천히 깨어난다. 빠르게 반응시키면 화면 전체 밝기가 오르내려

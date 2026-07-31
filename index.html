@@ -170,6 +170,7 @@ const FRC_W = 160, FRC_H = 64;    // 손짓(힘) 격자
 const P = {
   handMode:   'motion',// 손짓 방식: 'motion' 화면 전체 · 'skeleton' 손끝 추적
   tipSize:    0.030,   // 손끝 파문 크기 (미터)
+  straight:   0.82,    // 이 값보다 곧은 손가락만 반응한다 (1에 가까울수록 엄격)
   motionGain: 2.2,     // 손짓 감도(움직임)
   presence:   0.40,    // 머무름 감도(가만히 든 손도 누른다)
   press:      0.55,    // 눌리는 깊이 (시뮬 단위)
@@ -1080,6 +1081,23 @@ function projectMotionToSurface(){
    라이브러리와 모델은 저장소에 넣어 뒀다(CDN 의존 없음). 처음 고를 때만 불러온다.
    ═══════════════════════════════════════════════════════════════════ */
 const TIPS = [4, 8, 12, 16, 20];                       // 엄지·검지·중지·약지·새끼 끝
+// 손가락마다 뿌리→끝 관절 넷. 접힌 손가락을 가려내는 데 쓴다.
+const FINGERS = [[1,2,3,4], [5,6,7,8], [9,10,11,12], [13,14,15,16], [17,18,19,20]];
+
+// 손가락이 펴졌는가 — 관절을 따라 잰 길이와 직선 거리의 비로 판정한다.
+// '손끝이 관절보다 위'로 보면 손을 눕히는 순간 무너지지만, 이 비는 손의 방향·크기와 무관하다.
+function fingerStraightness(hand, joints, aspect){
+  let path = 0;
+  for (let i=0; i<3; i++){
+    const a = hand[joints[i]], b = hand[joints[i+1]];
+    if (!a || !b) return 0;
+    path += Math.hypot((b.x - a.x) * aspect, b.y - a.y);
+  }
+  const a = hand[joints[0]], d = hand[joints[3]];
+  if (!a || !d || path < 1e-6) return 0;
+  return Math.hypot((d.x - a.x) * aspect, d.y - a.y) / path;
+}
+const camAspect = () => (video.videoWidth && video.videoHeight) ? video.videoWidth / video.videoHeight : 1.333;
 const HAND_BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],
                     [11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
 let handLandmarker = null, handsState = 'off', hands = [], lastDetect = 0;
@@ -1115,9 +1133,11 @@ function detectHands(now){
 function stampFingertips(){
   if (!hands.length) return;
   let touched = false;
+  const aspect = camAspect();
   for (const hand of hands){
-    for (const t of TIPS){
-      const lm = hand[t]; if (!lm) continue;
+    for (const joints of FINGERS){
+      if (fingerStraightness(hand, joints, aspect) < P.straight) continue;   // 접은 손가락은 지나친다
+      const lm = hand[joints[3]]; if (!lm) continue;
       const nx = P.mirror ? 1 - lm.x : lm.x;
       const ny = P.flipV ? lm.y : 1 - lm.y;
       ray.setFromCamera({ x: nx*2 - 1, y: 1 - ny*2 }, camera);
@@ -1269,6 +1289,7 @@ const CTRL = [
     ['presence','머무름 감도', 0, 1.5, 0.01],
     ['press','눌리는 깊이', 0.05, 1.5, 0.01],
     ['tipSize','손끝 파문 크기', 0.008, 0.12, 0.002],
+    ['straight','손가락 펴짐 기준', 0.60, 0.98, 0.01],
   ]],
   ['작품 치수', [
     ['slabW','길이 (m)', 0.60, 4.00, 0.05],
@@ -1495,10 +1516,13 @@ function drawPreview(){
         mctx.moveTo(px[a][0], px[a][1]); mctx.lineTo(px[b][0], px[b][1]);
       }
       mctx.stroke();
+      const asp = camAspect();
+      const open = FINGERS.map(j => fingerStraightness(hand, j, asp) >= P.straight);
       for (let i=0;i<px.length;i++){
-        const tip = TIPS.indexOf(i) >= 0;
-        mctx.fillStyle = tip ? '#fff3d0' : 'rgba(217,180,92,0.55)';
-        mctx.beginPath(); mctx.arc(px[i][0], px[i][1], tip ? 3.4 : 1.6, 0, 6.2832); mctx.fill();
+        const fi = TIPS.indexOf(i);                       // 손끝이면 어느 손가락인지
+        const live = fi >= 0 && open[fi];                 // 펴진 손끝만 반응한다
+        mctx.fillStyle = live ? '#fff3d0' : (fi >= 0 ? 'rgba(217,180,92,0.30)' : 'rgba(217,180,92,0.55)');
+        mctx.beginPath(); mctx.arc(px[i][0], px[i][1], live ? 4.0 : (fi >= 0 ? 2.2 : 1.6), 0, 6.2832); mctx.fill();
       }
     }
     if (!hands.length && camReady){

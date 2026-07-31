@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>WORK 31 · 파문 — Chrome Ripple</title>
+<title>크롬 웨이브 — Chrome Wave · 김연</title>
 <style>
 :root{
   --ui-bg:rgba(14,15,18,.80);
@@ -87,8 +87,8 @@ kbd{font:inherit;font-size:10px;background:rgba(255,255,255,.09);border:1px soli
 <video id="cam" playsinline muted autoplay></video>
 
 <div id="title">
-  <b>WORK 31 · 파문</b>
-  <span>CHROME RIPPLE — 2000 × 800 × 500 mm, stainless steel</span>
+  <b>크롬 웨이브</b>
+  <span>김연 아트워크 — 2000 × 800 × 500 mm, stainless steel</span>
 </div>
 
 <div id="mwrap">
@@ -97,7 +97,7 @@ kbd{font:inherit;font-size:10px;background:rgba(255,255,255,.09);border:1px soli
 </div>
 
 <div id="panel">
-  <div class="phead"><b>파문</b><span>CHROME RIPPLE</span></div>
+  <div class="phead"><b>크롬 웨이브</b><span>CHROME WAVE</span></div>
   <div id="ctrls"></div>
   <div class="sec">
     <p class="sect">화면</p>
@@ -124,8 +124,8 @@ kbd{font:inherit;font-size:10px;background:rgba(255,255,255,.09);border:1px soli
 <div id="stat"></div>
 
 <div id="veil">
-  <h1>파문 — Chrome Ripple</h1>
-  <p>어두운 전시장 바닥에 놓인 2미터 스테인레스 수면.<br>
+  <h1>크롬 웨이브 — Chrome Wave</h1>
+  <p>김연 아트워크. 어두운 전시장 바닥에 놓인 2미터 스테인레스 수면.<br>
      웹캠 앞에서 <em>손을 움직이면</em> 금속이 눌리고 파문이 퍼집니다.</p>
   <div class="go">화면을 눌러 시작</div>
   <p class="sub">웹캠을 허용하면 손짓으로, 거부해도 마우스와 무인 연주로 작동합니다</p>
@@ -169,7 +169,9 @@ const P = {
   speed:      0.30,    // 전파 속도 (0.5 넘으면 발산)
   amp:        0.045,   // 파고 (시뮬 단위 → 미터)
   swell:      0.0062,  // 얼어붙은 물결 — 사진의 울퉁불퉁한 상판
+  dense:      1.00,    // 그 물결의 밀도 (작으면 넓게, 크면 촘촘하게)
   micro:      0.00004, // 잔물결(광택 떨림) — 크면 조명이 깜빡이는 것처럼 보인다
+  microSize:  1.00,    // 잔물결 크기 (키우면 파장이 길어진다)
   rough:      0.115,   // 금속 거칠기
   env:        'power', // 반사할 환경(HDRI)
   envI:       0.55,    // 조명 세기 — HDRI를 그대로 쓰면 거울면이 타버린다
@@ -187,11 +189,26 @@ const P = {
   idleSec:    20,
 };
 
+/* 하나씩 꺼보며 원인을 찾기 위한 스위치.
+   무엇이 화면을 흔드는지 알려면 전부 켠 상태에서 하나씩 빼보는 수밖에 없다. */
+const T = {
+  webcam:true, camMove:true, beams:true, dust:true, pool:true,
+  bloom:true, grade:true, cube:true, sim:true, swell:true, wake:true,
+};
+const TOGGLES = [
+  ['webcam','웹캠'], ['camMove','카메라 움직임'], ['beams','광선(원뿔)'], ['dust','먼지 입자'],
+  ['pool','빛웅덩이'], ['bloom','블룸'], ['grade','그레인·비네트'], ['cube','큐브'],
+  ['sim','파문(시뮬)'], ['swell','너울'], ['wake','손짓 노출 반응'],
+];
+
 /* ═══════════════════════════════════════════════════════════════════
    렌더러
    ═══════════════════════════════════════════════════════════════════ */
 const canvas = document.getElementById('gl');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, powerPreference:'high-performance' });
+// preserveDrawingBuffer: 한 프레임을 못 그려도 캔버스가 지워지지 않게 한다.
+// 기본값(false)이면 프레임을 하나 거를 때마다 검정이 한 장 껴들어 '깜빡임'으로 보인다.
+const renderer = new THREE.WebGLRenderer({
+  canvas, antialias:true, powerPreference:'high-performance', preserveDrawingBuffer:true });
 // 레티나에서 2배로 그리면 픽셀이 1.8배 늘어 GPU가 밀린다. 1.5면 눈으로 구분되지 않는다.
 renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
 renderer.setSize(innerWidth, innerHeight);
@@ -320,7 +337,7 @@ function normalizeHDR(tex, targetMean = 0.45, knee = 3.0){
 function applyBackground(){
   if (P.bg > 0.002 && scene.environment){
     scene.background = scene.environment;      // PMREM 결과라야 흐리기가 먹는다
-    scene.backgroundBlurriness = 0.92;
+    scene.backgroundBlurriness = 1.0;          // 지평선 자국이 남지 않게 끝까지 흐린다
     scene.backgroundIntensity = P.bg;
   } else {
     scene.background = BLACK;
@@ -473,7 +490,10 @@ const beamProto = new THREE.ShaderMaterial({
       vec3 d = cameraPosition - vW;
       float dist = length(d);
       vec3 v = d / max(dist, 1e-4);
-      float edge = pow(1.0 - abs(dot(normalize(vN), v)), 2.2);   // 실루엣에서 두꺼워 보이는 성질
+      // 두께감은 실루엣 쪽이 두꺼운 데서 오지만, 그대로 두면 원뿔의 윤곽선이
+      // 칼로 자른 듯한 밝은 선으로 남는다. 그래서 실루엣 바로 앞에서 다시 0으로 보낸다.
+      float f = 1.0 - abs(dot(normalize(vN), v));
+      float edge = smoothstep(0.0, 0.45, f) * smoothstep(1.0, 0.62, f);
       float fall = smoothstep(0.0, 0.5, vH) * smoothstep(1.0, 0.3, vH);
       // 카메라가 원뿔 면에 가까워지거나 안으로 들어가면 사라진다.
       // 이게 없으면 경계를 지날 때 가산합성 면이 화면을 덮어 번쩍인다.
@@ -482,6 +502,7 @@ const beamProto = new THREE.ShaderMaterial({
     }`,
   transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide
 });
+const beams = [];
 function beam(x, z, top, botR, color, op){
   const m = beamProto.clone();
   m.uniforms.uColor.value = new THREE.Color(color);
@@ -489,6 +510,7 @@ function beam(x, z, top, botR, color, op){
   const mesh = new THREE.Mesh(new THREE.ConeGeometry(botR, top, 40, 12, true), m);
   mesh.position.set(x, top/2, z);
   scene.add(mesh);
+  beams.push(mesh);
 }
 beam(0.7, 1.0, 5.4, 1.6, 0xd8e6ff, 0.022);
 beam(-3.4, -2.6, 4.2, 1.2, 0x93aad8, 0.012);
@@ -612,37 +634,42 @@ const GLSL_WAVES = `
   // (높이, dh/dx, dh/dz) — 해석적 미분이라 형상과 음영이 어긋나지 않는다
   // 진폭을 파수에 1/k^0.8 로 준다. 1/k^1.5 처럼 급히 죽이면 잔면의 기울기가 0에 수렴해
   // 하이라이트가 큰 방울로만 뭉친다 — 구겨진 은박처럼 보이려면 잔면도 기울기를 가져야 한다.
+  // uDense: 밀도. 파수를 통째로 곱한다(크면 촘촘, 작으면 넓게 일렁인다).
+  // 시간 주파수는 sqrt로 따라간다 — 깊은 물에서 짧은 물결이 더 느리게 가는 관계(ω=√(gk))를 흉내낸 것.
   vec3 swellHG(vec2 p, float t){
     vec3 a = vec3(0.0); vec2 d; float k, w, m, ph;
-    d = normalize(vec2( 1.00, 0.35)); k =  3.10; w = 0.50; m = 1.000;   // 파장 2.0 m
+    float kd = uDense, wd = sqrt(uDense);
+    d = normalize(vec2( 1.00, 0.35)); k =  3.10*kd; w = 0.50*wd; m = 1.000;   // 기본 파장 2.0 m
     ph = dot(p,d)*k + t*w; a.x += m*sin(ph); a.yz += m*k*cos(ph)*d;
-    d = normalize(vec2(-0.40, 1.00)); k =  5.40; w = 0.68; m = 0.760;   // 1.16 m
+    d = normalize(vec2(-0.40, 1.00)); k =  5.40*kd; w = 0.68*wd; m = 0.760;   // 1.16 m
     ph = dot(p,d)*k + t*w; a.x += m*sin(ph); a.yz += m*k*cos(ph)*d;
-    d = normalize(vec2( 0.85,-0.62)); k =  8.70; w = 0.90; m = 0.560;   // 0.72 m
+    d = normalize(vec2( 0.85,-0.62)); k =  8.70*kd; w = 0.90*wd; m = 0.560;   // 0.72 m
     ph = dot(p,d)*k + t*w; a.x += m*sin(ph); a.yz += m*k*cos(ph)*d;
     // 여기부터는 방향을 촘촘히 흩어 놓는다. 몇 개 안 되면 나란한 줄무늬(호랑이 가죽)로 보인다.
-    d = normalize(vec2( 0.20, 0.98)); k = 13.50; w = 1.15; m = 0.400;   // 0.47 m
+    d = normalize(vec2( 0.20, 0.98)); k = 13.50*kd; w = 1.15*wd; m = 0.400;   // 0.47 m
     ph = dot(p,d)*k + t*w; a.x += m*sin(ph); a.yz += m*k*cos(ph)*d;
-    d = normalize(vec2(-0.93, 0.36)); k = 17.00; w = 1.30; m = 0.330;   // 0.37 m
+    d = normalize(vec2(-0.93, 0.36)); k = 17.00*kd; w = 1.30*wd; m = 0.330;   // 0.37 m
     ph = dot(p,d)*k + t*w; a.x += m*sin(ph); a.yz += m*k*cos(ph)*d;
-    d = normalize(vec2( 0.62,-0.79)); k = 20.00; w = 1.45; m = 0.260;   // 0.31 m
+    d = normalize(vec2( 0.62,-0.79)); k = 20.00*kd; w = 1.45*wd; m = 0.260;   // 0.31 m
     ph = dot(p,d)*k + t*w; a.x += m*sin(ph); a.yz += m*k*cos(ph)*d;
-    d = normalize(vec2(-0.31,-0.95)); k = 24.00; w = 1.62; m = 0.210;   // 0.26 m
+    d = normalize(vec2(-0.31,-0.95)); k = 24.00*kd; w = 1.62*wd; m = 0.210;   // 0.26 m
     ph = dot(p,d)*k + t*w; a.x += m*sin(ph); a.yz += m*k*cos(ph)*d;
-    d = normalize(vec2( 0.71, 0.70)); k = 29.00; w = 1.80; m = 0.160;   // 0.22 m — 큐브 요철과 같은 크기
+    d = normalize(vec2( 0.71, 0.70)); k = 29.00*kd; w = 1.80*wd; m = 0.160;   // 0.22 m — 큐브 요철과 같은 크기
     ph = dot(p,d)*k + t*w; a.x += m*sin(ph); a.yz += m*k*cos(ph)*d;
-    d = normalize(vec2( 0.98,-0.20)); k = 34.00; w = 2.05; m = 0.125;   // 0.18 m
+    d = normalize(vec2( 0.98,-0.20)); k = 34.00*kd; w = 2.05*wd; m = 0.125;   // 0.18 m
     ph = dot(p,d)*k + t*w; a.x += m*sin(ph); a.yz += m*k*cos(ph)*d;
     return a;
   }
-  // 기울기만 — 표면을 밀지 않고 빛만 떨리게 한다
+  // 기울기만 — 표면을 밀지 않고 빛만 떨리게 한다.
+  // uMicroSize를 키우면 잔물결 자체가 커진다(파수를 나눈다). 기본 1.0에서 파장 2~4 cm.
   vec2 microG(vec2 p, float t){
     vec2 g = vec2(0.0); vec2 d; float k, w, m, ph;
-    d = normalize(vec2( 0.90, 0.44)); k = 168.0; w = 2.3; m = 1.00;
+    float ks = 1.0 / max(uMicroSize, 0.05), ws = 1.0 / sqrt(max(uMicroSize, 0.05));
+    d = normalize(vec2( 0.90, 0.44)); k = 168.0*ks; w = 2.3*ws; m = 1.00;
     ph = dot(p,d)*k + t*w; g += m*k*cos(ph)*d;
-    d = normalize(vec2(-0.62, 0.79)); k = 233.0; w = 3.1; m = 0.62;
+    d = normalize(vec2(-0.62, 0.79)); k = 233.0*ks; w = 3.1*ws; m = 0.62;
     ph = dot(p,d)*k + t*w; g += m*k*cos(ph)*d;
-    d = normalize(vec2( 0.31,-0.95)); k = 301.0; w = 1.7; m = 0.40;
+    d = normalize(vec2( 0.31,-0.95)); k = 301.0*ks; w = 1.7*ws; m = 0.40;
     ph = dot(p,d)*k + t*w; g += m*k*cos(ph)*d;
     return g;
   }`;
@@ -657,6 +684,8 @@ const waterU = {
   uTime:{   value:0 },
   uMaxDip:{ value:MAX_DIP },
   uNAA:{    value:0.22 },   // 스페큘러 안티앨리어싱 세기 — 크면 수면이 대리석처럼 흐려진다
+  uDense:{  value:P.dense },
+  uMicroSize:{ value:P.microSize },
 };
 
 // isSkirt: 옆면은 윗줄(local y=0)만 수면을 따라가고 법선은 그대로 둔다.
@@ -669,7 +698,8 @@ function makeSurfaceMaterial(isSkirt){
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, waterU);
     sh.vertexShader = `
-      uniform sampler2D uHeight; uniform vec2 uSize; uniform float uAmp, uSwell, uTime, uMaxDip;
+      uniform sampler2D uHeight; uniform vec2 uSize;
+      uniform float uAmp, uSwell, uTime, uMaxDip, uDense, uMicroSize;
       varying vec2 vSUv; varying vec2 vSP; varying vec3 vTanX; varying vec3 vTanZ;
       ${GLSL_WAVES}
     ` + sh.vertexShader.replace('#include <begin_vertex>', `
@@ -686,7 +716,7 @@ function makeSurfaceMaterial(isSkirt){
     if (isSkirt) return;
     sh.fragmentShader = `
       uniform sampler2D uHeight; uniform vec2 uHTexel, uSize;
-      uniform float uAmp, uSwell, uMicro, uTime, uNAA;
+      uniform float uAmp, uSwell, uMicro, uTime, uNAA, uDense, uMicroSize;
       varying vec2 vSUv; varying vec2 vSP; varying vec3 vTanX; varying vec3 vTanZ;
       ${GLSL_WAVES}
     ` + sh.fragmentShader.replace('#include <normal_fragment_begin>', `
@@ -836,7 +866,18 @@ const lumaPrev = new Float32Array(FRC_W*FRC_H);   // 직전 프레임 → 순간
 const lumaBg   = new Float32Array(FRC_W*FRC_H);   // 느린 배경 → 머물러 있는 존재
 let camReady = false, camWarm = false, motionEnergy = 0, lastMotionAt = -1e9, clock = 0;
 
+function setWebcam(on){
+  if (on){ startCamera(); return; }
+  const s = video.srcObject;
+  if (s) for (const t of s.getTracks()) t.stop();
+  video.srcObject = null;
+  camReady = false; camWarm = false; motionEnergy = 0;
+  fAcc.fill(0);
+  camnote.textContent = '웹캠 꺼짐 — 마우스와 무인 연주로 작동합니다.';
+}
+
 async function startCamera(){
+  if (!T.webcam) return;
   if (!navigator.mediaDevices?.getUserMedia){
     camnote.textContent = '웹캠 없음 — 이 브라우저는 카메라를 지원하지 않습니다. 마우스와 무인 연주로 작동합니다.';
     return;
@@ -1046,7 +1087,9 @@ const CTRL = [
     ['speed','전파 속도', 0.10, 0.45, 0.01],
     ['amp','파고', 0.005, 0.09, 0.001],
     ['swell','얼어붙은 물결', 0, 0.016, 0.0002],
-    ['micro','잔물결', 0, 0.0004, 0.00001],
+    ['dense','물결 밀도', 0.25, 3.0, 0.05],
+    ['micro','잔물결 세기', 0, 0.0006, 0.00001],
+    ['microSize','잔물결 크기', 0.3, 8.0, 0.1],
   ]],
   ['조명 하나씩', LAMPS.map(l => [l.key, l.name, 0, l.max, l.max/200]).concat([
     ['keyI','바닥 스포트', 0, 60, 0.5],
@@ -1064,6 +1107,38 @@ const CTRL = [
 ];
 const ctrls = document.getElementById('ctrls');
 const valEl = {};
+
+/* 끄고 켜기 — 원인을 하나씩 빼면서 찾는 도구 */
+const toggleBtns = [];
+(function buildToggleUI(){
+  const sec = document.createElement('div'); sec.className = 'sec';
+  const h = document.createElement('p'); h.className = 'sect'; h.textContent = '끄고 켜기 · 문제 찾기';
+  sec.appendChild(h);
+  const grid = document.createElement('div'); grid.className = 'grid2';
+  for (const [k, name] of TOGGLES){
+    const b = document.createElement('button');
+    b.className = 'b'; b.textContent = name; b.dataset.t = k;
+    b.addEventListener('click', ()=>{
+      T[k] = !T[k];
+      if (k === 'webcam') setWebcam(T.webcam);
+      applyToggles();
+    });
+    grid.appendChild(b); toggleBtns.push(b);
+  }
+  sec.appendChild(grid);
+  ctrls.appendChild(sec);
+})();
+
+function applyToggles(){
+  for (const b of beams) b.visible = T.beams;
+  motes.visible = T.dust;
+  pool.visible  = T.pool;
+  cube.visible  = T.cube;
+  bloom.enabled = T.bloom;
+  gradePass.enabled = T.grade;
+  for (const b of toggleBtns) b.classList.toggle('on', T[b.dataset.t]);
+  applyParams();                       // 파문·너울은 값을 0으로 눌러 끈다
+}
 for (const [secName, items] of CTRL){
   const sec = document.createElement('div'); sec.className = 'sec';
   const h = document.createElement('p'); h.className = 'sect'; h.textContent = secName;
@@ -1106,9 +1181,11 @@ for (const [secName, items] of CTRL){
 })();
 
 function applyParams(){
-  waterU.uAmp.value   = P.amp;
-  waterU.uSwell.value = P.swell;
+  waterU.uAmp.value   = T.sim   ? P.amp   : 0;
+  waterU.uSwell.value = T.swell ? P.swell : 0;
   waterU.uMicro.value = P.micro;
+  waterU.uDense.value = P.dense;
+  waterU.uMicroSize.value = P.microSize;
   waterMat.roughness = P.rough;
   key.intensity = P.keyI;
   rimLight.intensity = P.rimI;
@@ -1136,7 +1213,7 @@ btn('b_flip').onclick   = ()=>{ P.flipV = !P.flipV; syncUI(); };
 btn('b_prev').onclick   = ()=>{ P.showMotion = !P.showMotion;
                                 btn('mwrap').classList.toggle('hidden', !P.showMotion); syncUI(); };
 btn('b_calm').onclick   = ()=>{ sim.clear(); fAcc.fill(0); };
-applyParams(); syncUI();
+applyToggles(); syncUI();
 const wantEnv = P.env;
 setEnvironment('room');                                  // 즉시 보이는 기본 환경(동기)
 if (wantEnv !== 'room') setEnvironment(wantEnv);         // HDRI는 받는 대로 갈아끼운다
@@ -1163,6 +1240,7 @@ veil.addEventListener('click', ()=>{
 const statEl = document.getElementById('stat');
 const previewImg = mctx.createImageData(FRC_W, FRC_H);
 let last = performance.now(), acc = 0, fpsAvg = 60, statT = 0, degraded = 0, loggedErr = false;
+let wakeSmooth = 0;
 const FIXED = 1/60;
 
 function drawMotionPreview(){
@@ -1218,13 +1296,18 @@ function tick(now){
   cube.position.y = TOP_Y + CUBE*Math.sqrt(3)/2 - CUBE_SINK + Math.sin(clock*0.29)*0.006;
 
   // ── 손짓에 따라 공간이 아주 살짝 깨어난다
-  const wake = Number.isFinite(motionEnergy) ? Math.min(1, motionEnergy*6) : 0;
-  renderer.toneMappingExposure = P.exposure * (1 + wake*0.12);
-  pool.material.opacity = 0.11 + wake*0.05;
+  // 손짓에 따라 아주 천천히 깨어난다. 빠르게 반응시키면 화면 전체 밝기가 오르내려
+  // '조명이 깜빡인다'로 보인다 — 그래서 시정수를 1.5초쯤 두고 폭도 작게 잡았다.
+  const wakeTarget = (T.wake && Number.isFinite(motionEnergy)) ? Math.min(1, motionEnergy*6) : 0;
+  wakeSmooth += (wakeTarget - wakeSmooth) * Math.min(1, dt*0.7);
+  renderer.toneMappingExposure = P.exposure * (1 + wakeSmooth*0.06);
+  pool.material.opacity = 0.11 + wakeSmooth*0.04;
 
-  updateCamera(clock, dt);
-  motes.rotation.y += dt*0.012;
-  motes.position.y = Math.sin(clock*0.13)*0.06;
+  if (T.camMove) updateCamera(clock, dt);
+  if (T.dust){
+    motes.rotation.y += dt*0.012;
+    motes.position.y = Math.sin(clock*0.13)*0.06;
+  }
   gradePass.uniforms.uTime.value = clock;
 
   composer.render();
@@ -1235,23 +1318,34 @@ function tick(now){
   if (statT > 0.5){
     statT = 0;
     const mode = (clock - lastMotionAt > P.idleSec) ? '무인 연주' : '응답';
-    statEl.textContent = `${fpsAvg.toFixed(0)} FPS · ${camReady?'CAM':'NO CAM'} · ${mode}`;
+    // 버퍼와 화면 크기가 어긋나면 화면 한쪽이 검게 잘린다 — 눈으로 바로 확인할 수 있게 적어 둔다
+    const buf = `${renderer.domElement.width}×${renderer.domElement.height}`;
+    statEl.textContent = `${fpsAvg.toFixed(0)} FPS · ${camReady?'CAM':'NO CAM'} · ${mode} · ${buf}`;
     // 밀리면 두 단계로 낮춘다. 프레임을 건너뛰는 것보다 조금 흐린 편이 낫다.
     if (clock > 6 && fpsAvg < 40){
-      if (degraded === 0){ degraded = 1; renderer.setPixelRatio(1); onResize(); }
+      if (degraded === 0){ degraded = 1; onResize(); }
       else if (degraded === 1 && fpsAvg < 30){ degraded = 2; bloom.enabled = false; }
     }
   }
 }
 
+// 창 크기가 아니라 '캔버스가 실제로 차지한 크기'를 따라간다.
+// window의 resize만 듣고 있으면, 패널이 접히거나 다른 배율의 모니터로 옮겨갈 때
+// 그리기 버퍼만 옛 크기로 남아 화면 한쪽이 검게 잘린다.
 function onResize(){
-  camera.aspect = innerWidth/innerHeight;
+  const w = canvas.clientWidth  || innerWidth;
+  const h = canvas.clientHeight || innerHeight;
+  const dpr = Math.min(devicePixelRatio || 1, degraded ? 1 : 1.5);
+  camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-  composer.setSize(innerWidth, innerHeight);
-  bloom.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(w, h, false);          // CSS 크기는 건드리지 않는다(이미 100%)
+  composer.setPixelRatio(dpr);
+  composer.setSize(w, h);
+  bloom.setSize(w, h);
 }
 addEventListener('resize', onResize);
+new ResizeObserver(onResize).observe(canvas);
 
 updateCamera(0, 0);
 for (let i=0;i<7;i++) stamp(Math.random(), Math.random(), 0.05, 12);   // 첫 화면이 죽어 있지 않도록

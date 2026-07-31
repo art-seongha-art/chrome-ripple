@@ -251,22 +251,23 @@ function softStripTexture(){
 }
 const STRIP_FADE = softStripTexture();
 
-/* 조명 하나하나 — 패널에서 세기를 따로 조절한다.
-   값이 바뀌면 환경맵을 다시 굽는다(금속이 보는 것이 곧 이 배치이므로). */
+/* 조명 배치 — 주광·보조광·역광의 3점 조명에, 작품을 따라 흐르는 천장 띠와
+   바닥 되비침을 더했다. 천장 띠는 3점에는 없지만, 2m 수면에 길게 눕는 이 띠가
+   없으면 크롬이 '액체'로 읽히지 않는다.
+   세기가 바뀌면 환경맵을 다시 굽는다(금속이 보는 것이 곧 이 배치이므로). */
+const AIM = new THREE.Vector3(0, TOP_Y, 0);
 const LAMPS = [
   // 끝을 페이드시키면 광량이 40%쯤 줄어든다 — 세기를 그만큼 올려 잡아 둔다
-  { key:'lampA', name:'천장 띠 1',  w:7.0,  h:0.30, color:0xffffff, i:3.10, max:6,
-    pos:[ 0.0, 5.2,  0.55], rot:[Math.PI/2, 0,  0.02] },
-  { key:'lampB', name:'천장 띠 2',  w:6.0,  h:0.22, color:0xf2f6ff, i:2.40, max:6,
-    pos:[-0.3, 5.6, -0.70], rot:[Math.PI/2, 0, -0.05] },
-  { key:'lampC', name:'천장 띠 3',  w:4.0,  h:0.18, color:0xffeedd, i:1.20, max:6,
-    pos:[ 0.8, 4.6,  1.60], rot:[Math.PI/2, 0,  0.10] },
-  { key:'lampD', name:'측광',       w:2.4,  h:0.70, color:0xa8c2ff, i:1.80, max:6,
-    pos:[-5.6, 2.3, -1.20], rot:[0, Math.PI/2, 0] },
-  { key:'lampE', name:'뒤 림라이트', w:2.0,  h:0.55, color:0xffe8cc, i:1.40, max:6,
-    pos:[ 1.6, 2.6, -6.20], rot:[0, 0, 0] },
-  { key:'lampF', name:'바닥 되비침', w:14.0, h:14.0, color:0x2c3a52, i:0.16, max:1,
-    pos:[ 0.0, 0.02, 0.0], rot:[-Math.PI/2, 0, 0], noFade:true },
+  { key:'lampKey',   name:'주광',       w:3.0,  h:1.00, color:0xfff4e6, i:3.40, max:8,
+    pos:[-2.60, 3.40,  2.40] },
+  { key:'lampFill',  name:'보조광',     w:3.4,  h:1.60, color:0xbfd4ff, i:1.60, max:8,
+    pos:[ 3.20, 1.90,  2.20] },
+  { key:'lampRim',   name:'역광',       w:2.6,  h:0.80, color:0xffe6c2, i:2.60, max:8,
+    pos:[ 0.80, 2.80, -3.60] },
+  { key:'lampTop',   name:'천장 띠',    w:7.0,  h:0.50, color:0xffffff, i:3.40, max:8,
+    pos:[ 0.00, 4.60,  0.20] },
+  { key:'lampFloor', name:'바닥 되비침', w:14.0, h:14.0, color:0x2c3a52, i:0.16, max:1,
+    pos:[ 0.00, 0.02,  0.00], noFade:true },
 ];
 for (const l of LAMPS) P[l.key] = l.i;
 
@@ -275,7 +276,13 @@ function areaLight(l, scale){
   m.color.set(l.color).multiplyScalar(P[l.key] * scale);   // 1을 넘는 값 → HDR 환경맵
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(l.w, l.h), m);
   mesh.position.set(...l.pos);
-  mesh.rotation.set(...l.rot);
+  // 평면 광원은 앞면만 빛난다 — 작품을 등지면 금속에 아예 안 보인다.
+  // 그래서 각도를 손으로 적지 않고 전부 작품을 겨누게 한다.
+  const dir = AIM.clone().sub(mesh.position).normalize();
+  // 거의 수직으로 내리꽂을 때는 up이 시선과 겹쳐 회전이 제멋대로가 된다.
+  // 이때 up을 +z로 두면 띠의 긴 축이 작품의 길이 방향(x)에 놓인다.
+  mesh.up.set(0, Math.abs(dir.y) > 0.95 ? 0 : 1, Math.abs(dir.y) > 0.95 ? 1 : 0);
+  mesh.lookAt(AIM);
   return mesh;
 }
 // hdr가 주어지면 그 환경 안에 조명 띠를 함께 세워 굽는다.
@@ -292,7 +299,7 @@ function buildEnvironment(hdr){
       new THREE.MeshStandardMaterial({ color:0x11151c, roughness:1, metalness:0, side:THREE.BackSide })));
   }
   for (const l of LAMPS){
-    if (l.key === 'lampF' && hdr) continue;   // HDRI에는 이미 바닥이 있다
+    if (l.key === 'lampFloor' && hdr) continue;   // HDRI에는 이미 바닥이 있다
     if (P[l.key] > 0.0005) s.add(areaLight(l, k));
   }
   return s;
@@ -377,8 +384,10 @@ async function setEnvironment(id){
 }
 
 /* 실제 조명 — 바닥 그림자와 빛웅덩이 */
+// 실제 조명은 환경맵의 주광·역광과 같은 방향에 둔다.
+// 반사되는 빛과 바닥 그림자가 서로 다른 쪽에서 오면 눈이 먼저 알아챈다.
 const key = new THREE.SpotLight(0xffffff, P.keyI, 15, 0.50, 0.93, 2);
-key.position.set(0.9, 5.6, 1.7);
+key.position.set(-2.6, 3.9, 2.4);
 key.target.position.set(0, TOP_Y, 0);
 key.castShadow = true;
 key.shadow.mapSize.set(1024, 1024);
@@ -386,8 +395,8 @@ key.shadow.camera.near = 1; key.shadow.camera.far = 13;
 key.shadow.bias = -0.0012; key.shadow.radius = 3;
 scene.add(key, key.target);
 
-const rimLight = new THREE.SpotLight(0xa8c4ff, 11, 17, 0.70, 1.0, 2);
-rimLight.position.set(-4.8, 3.2, -3.8);
+const rimLight = new THREE.SpotLight(0xa8c4ff, P.rimI, 17, 0.70, 1.0, 2);
+rimLight.position.set(0.8, 3.0, -3.6);
 rimLight.target.position.set(0, TOP_Y, 0);
 scene.add(rimLight, rimLight.target);
 scene.add(new THREE.AmbientLight(0x141c2a, 0.5));
@@ -1092,8 +1101,8 @@ const CTRL = [
     ['microSize','잔물결 크기', 0.3, 8.0, 0.1],
   ]],
   ['조명 하나씩', LAMPS.map(l => [l.key, l.name, 0, l.max, l.max/200]).concat([
-    ['keyI','바닥 스포트', 0, 60, 0.5],
-    ['rimI','측면 스포트', 0, 40, 0.5],
+    ['keyI','주광 스포트(그림자)', 0, 60, 0.5],
+    ['rimI','역광 스포트', 0, 40, 0.5],
   ])],
   ['금속과 빛', [
     ['rough','금속 거칠기', 0.01, 0.30, 0.005],

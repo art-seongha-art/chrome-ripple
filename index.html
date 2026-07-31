@@ -1032,11 +1032,11 @@ function boxBlur(src, dst, w, h, r, horizontal){
 // 반드시 '이번 프레임 원본'에만 건다.
 // 감쇠하며 누적되는 버퍼에 이득을 곱하면 매 프레임 커져서 화면이 굳어버린다.
 function blurMotion(){
-  boxBlur(motRaw, motTmp, MW, MH, 4, true);
-  boxBlur(motTmp, motRaw, MW, MH, 4, false);
-  boxBlur(motRaw, motTmp, MW, MH, 3, true);
-  boxBlur(motTmp, motRaw, MW, MH, 3, false);
-  for (let i=0;i<motRaw.length;i++) motRaw[i] *= 2.2;   // 흐리면 낮아지므로 한 번만 되살린다
+  // 세게 걸면 손이 한 덩어리로 뭉개져 수면이 통째로 일렁인다.
+  // 계단만 지울 만큼(2칸)만 걸어 물방울 같은 또렷함을 남긴다.
+  boxBlur(motRaw, motTmp, MW, MH, 2, true);
+  boxBlur(motTmp, motRaw, MW, MH, 2, false);
+  for (let i=0;i<motRaw.length;i++) motRaw[i] *= 1.35;   // 흐린 만큼만 되살린다
 }
 
 /* 웹캠이 본 움직임(화면 좌표)을 수면 위로 옮긴다.
@@ -1132,11 +1132,11 @@ function stampFingertips(){
 /* 무인 연주 — 아무도 없을 때 스스로 일렁인다 */
 let nextDrop = 4;
 function ghostPerform(t){
-  stamp(0.5 + 0.36*Math.sin(t*0.23)*Math.cos(t*0.07), 0.5 + 0.30*Math.sin(t*0.31 + 1.7), 0.22, 0.34);
-  stamp(0.5 + 0.42*Math.sin(t*0.17 + 2.4),            0.5 + 0.26*Math.cos(t*0.26 + 0.4), 0.17, 0.22);
+  // 떠도는 덩어리는 아주 옅게만 — 주인공은 이따금 떨어지는 물방울이다
+  stamp(0.5 + 0.36*Math.sin(t*0.23)*Math.cos(t*0.07), 0.5 + 0.30*Math.sin(t*0.31 + 1.7), 0.20, 0.12);
   if (t > nextDrop){
-    nextDrop = t + 3.5 + Math.random()*6;
-    stamp(0.08 + Math.random()*0.84, 0.15 + Math.random()*0.70, 0.070, 1.0);   // 물방울
+    nextDrop = t + 2.0 + Math.random()*4.5;
+    stamp(0.06 + Math.random()*0.88, 0.12 + Math.random()*0.76, 0.030, 1.0);   // 물방울 — 작고 또렷하게
   }
 }
 
@@ -1529,7 +1529,7 @@ function tick(now){
   clock += dt;
 
   // ── 힘의 장
-  const decay = Math.pow(0.86, dt*60);
+  const decay = Math.pow(0.78, dt*60);   // 빨리 놓아줘야 눌림이 파문으로 바뀐다
   for (let i=0;i<fAcc.length;i++) fAcc[i] *= decay;
   for (let i=0;i<mot.length;i++)  mot[i]  *= decay;
   if (P.handMode === 'skeleton'){

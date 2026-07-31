@@ -872,7 +872,8 @@ function rebuildSlab(){
 /* ═══════════════════════════════════════════════════════════════════
    힘의 장 — 웹캠 손짓 + 포인터 + 큐브 + 무인 연주가 한 장에 합쳐진다
    ═══════════════════════════════════════════════════════════════════ */
-const fAcc  = new Float32Array(FRC_W * FRC_H);
+const fAcc  = new Float32Array(FRC_W * FRC_H);   // 수면 좌표 — 실제로 수면을 누르는 힘
+const mot   = new Float32Array(FRC_W * FRC_H);   // 화면 좌표 — 웹캠이 본 움직임
 const fByte = new Uint8Array(FRC_W * FRC_H);
 const forceTex = new THREE.DataTexture(fByte, FRC_W, FRC_H, THREE.RedFormat, THREE.UnsignedByteType);
 forceTex.minFilter = forceTex.magFilter = THREE.LinearFilter;
@@ -917,7 +918,7 @@ function setWebcam(on){
   if (s) for (const t of s.getTracks()) t.stop();
   video.srcObject = null;
   camReady = false; camWarm = false; motionEnergy = 0;
-  fAcc.fill(0);
+  fAcc.fill(0); mot.fill(0);
   camnote.textContent = '웹캠 꺼짐 — 마우스와 무인 연주로 작동합니다.';
 }
 
@@ -981,14 +982,43 @@ function sampleCamera(){
     lumaBg[i]  += (y - lumaBg[i]) * 0.012;
     const f = motionToForce(motion, presence);
     if (f > 0){
-      const row = (i / FRC_W) | 0;                    // 카메라 세로축 → 수면 깊이축
-      const j = (P.flipV ? FRC_H-1-row : row)*FRC_W + (i % FRC_W);
-      if (f > fAcc[j]) fAcc[j] = f;
+      const row = (i / FRC_W) | 0;
+      const j = (P.flipV ? FRC_H-1-row : row)*FRC_W + (i % FRC_W);   // 웹캠 위쪽 = 화면 위쪽
+      if (f > mot[j]) mot[j] = f;
       energy += motion;
     }
   }
   motionEnergy = motionEnergy*0.85 + (energy / (FRC_W*FRC_H) * 60) * 0.15;
   if (motionEnergy > 0.010) lastMotionAt = clock;
+}
+
+/* 웹캠이 본 움직임(화면 좌표)을 수면 위로 옮긴다.
+   수면도 평면이고 화면도 평면이라 둘 사이는 사영변환 하나로 이어진다 —
+   격자 한 칸의 세계 좌표를 카메라 행렬로 투영해 화면 위치를 얻고 거기서 읽어오면 된다.
+   덕분에 카메라가 어떤 각도로 돌든, 뒤집히든, 손은 '화면에서 보이는 그 자리'를 누른다. */
+const _vp = new THREE.Matrix4();
+function projectMotionToSurface(){
+  if (!camReady) return;
+  camera.updateMatrixWorld();                                   // 렌더 전이라 직접 갱신한다
+  camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+  _vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  const e = _vp.elements, y0 = TOP_Y;
+  for (let j=0; j<FRC_H; j++){
+    const z = (0.5 - (j+0.5)/FRC_H) * SLAB_D;
+    for (let i=0; i<FRC_W; i++){
+      const x = ((i+0.5)/FRC_W - 0.5) * SLAB_W;
+      const cw = e[3]*x + e[7]*y0 + e[11]*z + e[15];
+      if (cw <= 1e-6) continue;                       // 카메라 뒤
+      const sx = (e[0]*x + e[4]*y0 + e[8]*z + e[12]) / cw;
+      const sy = (e[1]*x + e[5]*y0 + e[9]*z + e[13]) / cw;
+      if (sx < -1 || sx > 1 || sy < -1 || sy > 1) continue;   // 화면 밖
+      const mx = Math.min(FRC_W-1, Math.max(0, (sx*0.5 + 0.5) * FRC_W | 0));
+      const my = Math.min(FRC_H-1, Math.max(0, (sy*0.5 + 0.5) * FRC_H | 0));
+      const f = mot[my*FRC_W + mx];
+      const k = j*FRC_W + i;
+      if (f > fAcc[k]) fAcc[k] = f;
+    }
+  }
 }
 
 /* 무인 연주 — 아무도 없을 때 스스로 일렁인다 */
@@ -1265,7 +1295,7 @@ btn('b_mirror').onclick = ()=>{ P.mirror = !P.mirror; syncUI(); };
 btn('b_flip').onclick   = ()=>{ P.flipV = !P.flipV; syncUI(); };
 btn('b_prev').onclick   = ()=>{ P.showMotion = !P.showMotion;
                                 btn('mwrap').classList.toggle('hidden', !P.showMotion); syncUI(); };
-btn('b_calm').onclick   = ()=>{ sim.clear(); fAcc.fill(0); };
+btn('b_calm').onclick   = ()=>{ sim.clear(); fAcc.fill(0); mot.fill(0); };
 rebuildSlab();                     // 형태를 처음 한 번 만든다 (치수 슬라이더가 다시 부른다)
 applyToggles(); syncUI();
 const wantEnv = P.env;
@@ -1299,8 +1329,8 @@ const FIXED = 1/60;
 
 function drawMotionPreview(){
   for (let i=0;i<FRC_W*FRC_H;i++){
-    const v = Math.min(1, fAcc[i] * 0.5);
-    const row = FRC_H - 1 - ((i/FRC_W)|0);           // 텍스처는 아래가 0 → 보기용으로 뒤집는다
+    const v = Math.min(1, (camReady ? mot[i] : fAcc[i]) * 0.5);
+    const row = FRC_H - 1 - ((i/FRC_W)|0);           // 아래가 0 → 화면과 같은 방향으로 뒤집는다
     const q = (row*FRC_W + (i % FRC_W))*4;
     previewImg.data[q+0] = 217*v + 10;
     previewImg.data[q+1] = 180*v + 11;
@@ -1327,8 +1357,9 @@ function tick(now){
 
   // ── 힘의 장
   const decay = Math.pow(0.86, dt*60);
-  for (let i=0;i<fAcc.length;i++) fAcc[i] *= decay;
+  for (let i=0;i<fAcc.length;i++){ fAcc[i] *= decay; mot[i] *= decay; }
   sampleCamera();
+  projectMotionToSurface();          // 화면에서 본 손짓 → 수면 위 그 자리
   if (clock - lastMotionAt > P.idleSec) ghostPerform(clock);
   // 큐브가 닿은 자리에서는 늘 파문이 번진다
   stamp(CUBE_X/SLAB_W + 0.5, 0.5 - CUBE_Z/SLAB_D, 0.17, 0.26 + 0.10*Math.sin(clock*0.9));

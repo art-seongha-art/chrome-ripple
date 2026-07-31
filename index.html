@@ -63,7 +63,7 @@ kbd{font:inherit;font-size:10px;background:rgba(255,255,255,.09);border:1px soli
 
 #mwrap{position:fixed;left:14px;top:14px;z-index:20;border:1px solid var(--ui-bd);border-radius:10px;
   overflow:hidden;background:rgba(14,15,18,.8);backdrop-filter:blur(10px)}
-#mwrap canvas{display:block;width:200px;height:80px;image-rendering:pixelated}
+#mwrap canvas{display:block;width:200px;height:113px}
 #mwrap .cap{font-size:9.5px;letter-spacing:.13em;color:var(--ui-dim);padding:4px 7px 5px;
   border-top:1px solid var(--ui-bd);display:flex;justify-content:space-between}
 #mwrap .cap b{color:var(--ui-acc);font-weight:600;font-variant-numeric:tabular-nums}
@@ -92,7 +92,7 @@ kbd{font:inherit;font-size:10px;background:rgba(255,255,255,.09);border:1px soli
 </div>
 
 <div id="mwrap">
-  <canvas id="mcv" width="160" height="64"></canvas>
+  <canvas id="mcv" width="192" height="108"></canvas>
   <div class="cap"><span>손짓</span><b id="menergy">0.00</b></div>
 </div>
 
@@ -178,7 +178,7 @@ const P = {
   dense:      1.15,    // 그 물결의 밀도 (작으면 넓게, 크면 촘촘하게)
   micro:      0.00039, // 잔물결(광택 떨림) — 크면 조명이 깜빡이는 것처럼 보인다
   microSize:  3.30,    // 잔물결 크기 (키우면 파장이 길어진다)
-  slabW:      REF_W,   // 작품 길이
+  slabW:      3.00,    // 작품 길이
   slabD:      REF_D,   // 작품 폭
   slabH:      REF_H,   // 작품 높이
   rough:      0.115,   // 금속 거칠기
@@ -606,7 +606,7 @@ class WaveSim {
           // 손은 힘을 '더하지' 않는다. 목표 깊이까지 '끌어당긴다'.
           // 아무리 오래 머물러도 눌리는 깊이에 상한이 있고, 떼는 순간 튀어올라 파문이 된다.
           float f = clamp(texture2D(uForce, vUv).r, 0.0, 1.0);
-          nh = mix(nh, -uPress * f, clamp(f * 3.0, 0.0, 0.92));
+          nh = mix(nh, -uPress * f, smoothstep(0.0, 0.45, f) * 0.92);
 
           vec2 e = min(vUv, 1.0 - vUv);                    // 벽에서 반사하되 조금 먹는다
           nh *= mix(0.962, 1.0, smoothstep(0.0, 0.05, min(e.x, e.y)));
@@ -857,7 +857,7 @@ function rebuildSlab(){
 
   cube.geometry.dispose();
   cube.geometry = new THREE.BoxGeometry(CUBE, CUBE, CUBE, 2, 2, 2);
-  CUBE_X = SLAB_W * 0.21; CUBE_Z = SLAB_D * 0.025; CUBE_SINK = CUBE * 0.163;
+  CUBE_X = SLAB_W / 6;  CUBE_Z = SLAB_D * 0.025; CUBE_SINK = CUBE * 0.163;   // 왼쪽에서 2/3 지점
 
   waterU.uSize.value.set(SLAB_W, SLAB_D);
   surfPlane.constant = -TOP_Y;
@@ -873,8 +873,12 @@ function rebuildSlab(){
    힘의 장 — 웹캠 손짓 + 포인터 + 큐브 + 무인 연주가 한 장에 합쳐진다
    ═══════════════════════════════════════════════════════════════════ */
 const fAcc  = new Float32Array(FRC_W * FRC_H);   // 수면 좌표 — 실제로 수면을 누르는 힘
-const mot   = new Float32Array(FRC_W * FRC_H);   // 화면 좌표 — 웹캠이 본 움직임
 const fByte = new Uint8Array(FRC_W * FRC_H);
+
+// 화면 좌표 — 웹캠이 본 움직임. 화면 비율(16:9)에 맞춰 두어야 손 모양이 눌리지 않는다.
+const MW = 192, MH = 108;
+const mot    = new Float32Array(MW * MH);
+const motTmp = new Float32Array(MW * MH);
 const forceTex = new THREE.DataTexture(fByte, FRC_W, FRC_H, THREE.RedFormat, THREE.UnsignedByteType);
 forceTex.minFilter = forceTex.magFilter = THREE.LinearFilter;
 forceTex.needsUpdate = true;
@@ -906,10 +910,10 @@ const mcv = document.getElementById('mcv'), mctx = mcv.getContext('2d');
 const menergy = document.getElementById('menergy');
 const camnote = document.getElementById('camnote');
 
-const grab = document.createElement('canvas'); grab.width = FRC_W; grab.height = FRC_H;
+const grab = document.createElement('canvas'); grab.width = MW; grab.height = MH;
 const gctx = grab.getContext('2d', { willReadFrequently:true });
-const lumaPrev = new Float32Array(FRC_W*FRC_H);   // 직전 프레임 → 순간 움직임
-const lumaBg   = new Float32Array(FRC_W*FRC_H);   // 느린 배경 → 머물러 있는 존재
+const lumaPrev = new Float32Array(MW*MH);   // 직전 프레임 → 순간 움직임
+const lumaBg   = new Float32Array(MW*MH);   // 느린 배경 → 머물러 있는 존재
 let camReady = false, camWarm = false, motionEnergy = 0, lastMotionAt = -1e9, clock = 0;
 
 function setWebcam(on){
@@ -959,14 +963,14 @@ function motionToForce(motion, presence){
 function sampleCamera(){
   if (!camReady || video.readyState < 2 || !video.videoWidth) return;
   gctx.save();
-  if (P.mirror){ gctx.translate(FRC_W, 0); gctx.scale(-1, 1); }
-  gctx.drawImage(video, 0, 0, FRC_W, FRC_H);
+  if (P.mirror){ gctx.translate(MW, 0); gctx.scale(-1, 1); }
+  gctx.drawImage(video, 0, 0, MW, MH);
   gctx.restore();
-  const img = gctx.getImageData(0, 0, FRC_W, FRC_H).data;
+  const img = gctx.getImageData(0, 0, MW, MH).data;
 
   // 첫 프레임은 배경으로만 삼는다. 0에서 시작하면 켜자마자 화면 전체가 눌린다.
   if (!camWarm){
-    for (let i=0, p=0; i<FRC_W*FRC_H; i++, p+=4){
+    for (let i=0, p=0; i<MW*MH; i++, p+=4){
       lumaPrev[i] = lumaBg[i] = (img[p]*0.299 + img[p+1]*0.587 + img[p+2]*0.114) / 255;
     }
     camWarm = true;
@@ -974,7 +978,7 @@ function sampleCamera(){
   }
 
   let energy = 0;
-  for (let i=0, p=0; i<FRC_W*FRC_H; i++, p+=4){
+  for (let i=0, p=0; i<MW*MH; i++, p+=4){
     const y = (img[p]*0.299 + img[p+1]*0.587 + img[p+2]*0.114) / 255;
     const motion   = Math.max(0, Math.abs(y - lumaPrev[i]) - 0.035);
     const presence = Math.max(0, Math.abs(y - lumaBg[i])   - 0.055);
@@ -982,14 +986,48 @@ function sampleCamera(){
     lumaBg[i]  += (y - lumaBg[i]) * 0.012;
     const f = motionToForce(motion, presence);
     if (f > 0){
-      const row = (i / FRC_W) | 0;
-      const j = (P.flipV ? FRC_H-1-row : row)*FRC_W + (i % FRC_W);   // 웹캠 위쪽 = 화면 위쪽
+      const row = (i / MW) | 0;
+      const j = (P.flipV ? MH-1-row : row)*MW + (i % MW);   // 웹캠 위쪽 = 화면 위쪽
       if (f > mot[j]) mot[j] = f;
       energy += motion;
     }
   }
-  motionEnergy = motionEnergy*0.85 + (energy / (FRC_W*FRC_H) * 60) * 0.15;
+  blurMotion();          // 손은 가장자리만 잡혀 점점이 흩어진다 — 뭉쳐야 손으로 보인다
+  motionEnergy = motionEnergy*0.85 + (energy / (MW*MH) * 60) * 0.15;
   if (motionEnergy > 0.010) lastMotionAt = clock;
+}
+
+/* 움직임을 뭉갠다. 프레임 차이는 손의 가장자리만 잡아서 그대로 쓰면
+   깨진 픽셀 무더기로 보인다. 상자 흐리기를 두 번 겹치면 가우시안에 가까워진다. */
+function boxBlur(src, dst, w, h, r, horizontal){
+  const norm = 1 / (2*r + 1);
+  if (horizontal){
+    for (let y=0; y<h; y++){
+      const o = y*w;
+      let sum = 0;
+      for (let x=-r; x<=r; x++) sum += src[o + Math.min(w-1, Math.max(0, x))];
+      for (let x=0; x<w; x++){
+        dst[o+x] = sum * norm;
+        sum += src[o + Math.min(w-1, x+r+1)] - src[o + Math.max(0, x-r)];
+      }
+    }
+  } else {
+    for (let x=0; x<w; x++){
+      let sum = 0;
+      for (let y=-r; y<=r; y++) sum += src[Math.min(h-1, Math.max(0, y))*w + x];
+      for (let y=0; y<h; y++){
+        dst[y*w+x] = sum * norm;
+        sum += src[Math.min(h-1, y+r+1)*w + x] - src[Math.max(0, y-r)*w + x];
+      }
+    }
+  }
+}
+function blurMotion(){
+  boxBlur(mot, motTmp, MW, MH, 4, true);
+  boxBlur(motTmp, mot, MW, MH, 4, false);
+  boxBlur(mot, motTmp, MW, MH, 3, true);
+  boxBlur(motTmp, mot, MW, MH, 3, false);
+  for (let i=0;i<mot.length;i++) mot[i] *= 2.2;   // 흐리면 값이 낮아지므로 되살린다
 }
 
 /* 웹캠이 본 움직임(화면 좌표)을 수면 위로 옮긴다.
@@ -1011,10 +1049,14 @@ function projectMotionToSurface(){
       if (cw <= 1e-6) continue;                       // 카메라 뒤
       const sx = (e[0]*x + e[4]*y0 + e[8]*z + e[12]) / cw;
       const sy = (e[1]*x + e[5]*y0 + e[9]*z + e[13]) / cw;
-      if (sx < -1 || sx > 1 || sy < -1 || sy > 1) continue;   // 화면 밖
-      const mx = Math.min(FRC_W-1, Math.max(0, (sx*0.5 + 0.5) * FRC_W | 0));
-      const my = Math.min(FRC_H-1, Math.max(0, (sy*0.5 + 0.5) * FRC_H | 0));
-      const f = mot[my*FRC_W + mx];
+      if (sx < -1.05 || sx > 1.05 || sy < -1.05 || sy > 1.05) continue;   // 화면 밖
+      // 가장 가까운 칸 하나만 집으면 계단이 생긴다 — 네 칸을 섞는다
+      const fx = Math.min(MW-1.001, Math.max(0, (sx*0.5 + 0.5) * MW - 0.5));
+      const fy = Math.min(MH-1.001, Math.max(0, (sy*0.5 + 0.5) * MH - 0.5));
+      const x0 = fx|0, y0 = fy|0, tx = fx-x0, ty = fy-y0;
+      const r0 = y0*MW, r1 = r0 + MW;
+      const f = (mot[r0+x0]*(1-tx) + mot[r0+x0+1]*tx)*(1-ty)
+              + (mot[r1+x0]*(1-tx) + mot[r1+x0+1]*tx)*ty;
       const k = j*FRC_W + i;
       if (f > fAcc[k]) fAcc[k] = f;
     }
@@ -1089,7 +1131,7 @@ const SHOTS = [
 ];
 const rig = { theta:SHOTS[0].theta, phi:SHOTS[0].phi, radius:SHOTS[0].r, fov:SHOTS[0].fov, ty:SHOTS[0].ty };
 let shotI = 0, shotT = 0, shotFrom = {...rig};
-const DWELL = 17, BLEND = 5.0;
+const DWELL = 26, BLEND = 9.0;   // 머무는 시간 · 넘어가는 시간(초)
 
 function nextShot(){ shotFrom = {...rig}; shotI = (shotI + 1) % SHOTS.length; shotT = 0; }
 
@@ -1101,7 +1143,7 @@ function updateCamera(t, dt){
     const e = k*k*k*(k*(k*6-15)+10);                   // smootherstep — 붙고 떨어지는 데 가속이 없다
     // 작품이 커지면 카메라도 그만큼 물러나고, 보는 높이도 따라 올라간다
     const fit = Math.max(SLAB_W, SLAB_H*3, SLAB_D*2) / REF_W;
-    rig.theta  = THREE.MathUtils.lerp(shotFrom.theta,  s.theta,   e) + shotT*0.0035;
+    rig.theta  = THREE.MathUtils.lerp(shotFrom.theta,  s.theta,   e) + shotT*0.0022;
     rig.phi    = THREE.MathUtils.lerp(shotFrom.phi,    s.phi,     e);
     rig.radius = THREE.MathUtils.lerp(shotFrom.radius, s.r * fit, e);
     rig.fov    = THREE.MathUtils.lerp(shotFrom.fov,    s.fov,     e);
@@ -1322,16 +1364,20 @@ veil.addEventListener('click', ()=>{
    루프
    ═══════════════════════════════════════════════════════════════════ */
 const statEl = document.getElementById('stat');
-const previewImg = mctx.createImageData(FRC_W, FRC_H);
+const previewImg = mctx.createImageData(MW, MH);
 let last = performance.now(), acc = 0, fpsAvg = 60, statT = 0, degraded = 0, loggedErr = false;
 let wakeSmooth = 0;
 const FIXED = 1/60;
 
 function drawMotionPreview(){
-  for (let i=0;i<FRC_W*FRC_H;i++){
-    const v = Math.min(1, (camReady ? mot[i] : fAcc[i]) * 0.5);
-    const row = FRC_H - 1 - ((i/FRC_W)|0);           // 아래가 0 → 화면과 같은 방향으로 뒤집는다
-    const q = (row*FRC_W + (i % FRC_W))*4;
+  for (let i=0;i<MW*MH;i++){
+    const col = i % MW, ln = (i/MW)|0;
+    // 웹캠이 없으면 수면이 실제로 받는 힘을 대신 보여준다(무인 연주 확인용)
+    const src = camReady ? mot[i]
+              : fAcc[Math.min(FRC_H-1, (ln*FRC_H/MH)|0)*FRC_W + Math.min(FRC_W-1, (col*FRC_W/MW)|0)];
+    const v = Math.min(1, src * 0.5);
+    const row = MH - 1 - ln;                         // 아래가 0 → 화면과 같은 방향으로 뒤집는다
+    const q = (row*MW + col)*4;
     previewImg.data[q+0] = 217*v + 10;
     previewImg.data[q+1] = 180*v + 11;
     previewImg.data[q+2] =  92*v + 14;
@@ -1357,7 +1403,8 @@ function tick(now){
 
   // ── 힘의 장
   const decay = Math.pow(0.86, dt*60);
-  for (let i=0;i<fAcc.length;i++){ fAcc[i] *= decay; mot[i] *= decay; }
+  for (let i=0;i<fAcc.length;i++) fAcc[i] *= decay;
+  for (let i=0;i<mot.length;i++)  mot[i]  *= decay;
   sampleCamera();
   projectMotionToSurface();          // 화면에서 본 손짓 → 수면 위 그 자리
   if (clock - lastMotionAt > P.idleSec) ghostPerform(clock);

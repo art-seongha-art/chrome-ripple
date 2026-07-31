@@ -1,0 +1,1261 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>WORK 31 · 파문 — Chrome Ripple</title>
+<style>
+:root{
+  --ui-bg:rgba(14,15,18,.80);
+  --ui-bd:rgba(255,255,255,.09);
+  --ui-fg:#ececed;
+  --ui-dim:#8f9098;
+  --ui-acc:#d9b45c;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;overflow:hidden;background:#000;color:var(--ui-fg);
+  font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,-apple-system,sans-serif;
+  -webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:crosshair}
+canvas#gl.orbit{cursor:grabbing}
+video#cam{position:fixed;width:2px;height:2px;opacity:.001;pointer-events:none;left:-10px;top:-10px}
+
+#title{position:fixed;left:20px;bottom:18px;z-index:15;pointer-events:none}
+#title b{display:block;font-size:13px;font-weight:650;letter-spacing:.02em}
+#title span{display:block;font-size:10.5px;color:var(--ui-dim);letter-spacing:.13em;margin-top:3px}
+
+#panel{position:fixed;top:14px;right:14px;width:288px;max-height:calc(100vh - 28px);
+  background:var(--ui-bg);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border:1px solid var(--ui-bd);border-radius:14px;overflow:hidden auto;
+  font-size:12px;line-height:1.45;z-index:20;
+  box-shadow:0 18px 50px rgba(0,0,0,.45);scrollbar-width:thin}
+#panel::-webkit-scrollbar{width:8px}
+#panel::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:8px}
+.hidden{display:none !important}
+.phead{display:flex;align-items:baseline;gap:8px;padding:13px 14px 10px;border-bottom:1px solid var(--ui-bd)}
+.phead b{font-size:12.5px;font-weight:650;letter-spacing:.02em}
+.phead span{font-size:10px;color:var(--ui-dim);letter-spacing:.14em}
+.sec{padding:11px 14px;border-bottom:1px solid var(--ui-bd)}
+.sec:last-child{border-bottom:0}
+.sect{font-size:9.5px;letter-spacing:.18em;color:var(--ui-dim);margin:0 0 9px;text-transform:uppercase}
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 4px}
+.row label{color:#c8c9cf}
+.row .val{color:var(--ui-acc);font-variant-numeric:tabular-nums;font-size:11px}
+.field{margin-bottom:11px}
+.field:last-child{margin-bottom:0}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:18px;background:transparent;margin:0;display:block}
+input[type=range]::-webkit-slider-runnable-track{height:3px;border-radius:3px;background:rgba(255,255,255,.15)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;margin-top:-5px;
+  border-radius:50%;background:var(--ui-fg);border:0;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+input[type=range]::-moz-range-track{height:3px;border-radius:3px;background:rgba(255,255,255,.15)}
+input[type=range]::-moz-range-thumb{width:13px;height:13px;border:0;border-radius:50%;background:var(--ui-fg);cursor:pointer}
+button.b{font:inherit;font-size:11.5px;color:var(--ui-fg);background:rgba(255,255,255,.06);
+  border:1px solid var(--ui-bd);border-radius:8px;padding:6px 8px;width:100%;cursor:pointer;outline:none}
+button.b:hover{background:rgba(255,255,255,.11)}
+button.b:active{transform:translateY(1px)}
+button.b.on{background:rgba(217,180,92,.16);border-color:rgba(217,180,92,.45);color:#f0dca8}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.note{font-size:10.5px;color:var(--ui-dim);line-height:1.6;margin:8px 0 0}
+.note b{color:var(--ui-acc);font-weight:600}
+.note code{font-size:10px;color:#c8c9cf}
+kbd{font:inherit;font-size:10px;background:rgba(255,255,255,.09);border:1px solid var(--ui-bd);
+  border-radius:4px;padding:1px 4px;color:#c8c9cf}
+
+#mwrap{position:fixed;left:14px;top:14px;z-index:20;border:1px solid var(--ui-bd);border-radius:10px;
+  overflow:hidden;background:rgba(14,15,18,.8);backdrop-filter:blur(10px)}
+#mwrap canvas{display:block;width:200px;height:80px;image-rendering:pixelated}
+#mwrap .cap{font-size:9.5px;letter-spacing:.13em;color:var(--ui-dim);padding:4px 7px 5px;
+  border-top:1px solid var(--ui-bd);display:flex;justify-content:space-between}
+#mwrap .cap b{color:var(--ui-acc);font-weight:600;font-variant-numeric:tabular-nums}
+
+#veil{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;
+  flex-direction:column;gap:18px;background:radial-gradient(circle at 50% 45%,#0a0c10 0%,#000 72%);
+  cursor:pointer;transition:opacity .9s;text-align:center;padding:24px}
+#veil.gone{opacity:0;pointer-events:none}
+#veil h1{font-size:19px;font-weight:600;letter-spacing:.02em;margin:0}
+#veil p{font-size:12.5px;color:var(--ui-dim);line-height:1.75;margin:0;max-width:440px}
+#veil em{color:var(--ui-acc);font-style:normal}
+#veil .go{border:1px solid rgba(217,180,92,.45);color:#f0dca8;background:rgba(217,180,92,.10);
+  border-radius:999px;padding:10px 26px;font-size:12.5px;letter-spacing:.06em;margin-top:4px}
+#veil .sub{font-size:10.5px;color:#6b6c74;letter-spacing:.04em}
+#stat{position:fixed;right:14px;bottom:14px;z-index:15;font-size:10px;color:#55565e;
+  letter-spacing:.1em;font-variant-numeric:tabular-nums;pointer-events:none}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<video id="cam" playsinline muted autoplay></video>
+
+<div id="title">
+  <b>WORK 31 · 파문</b>
+  <span>CHROME RIPPLE — 2000 × 800 × 500 mm, stainless steel</span>
+</div>
+
+<div id="mwrap">
+  <canvas id="mcv" width="160" height="64"></canvas>
+  <div class="cap"><span>손짓</span><b id="menergy">0.00</b></div>
+</div>
+
+<div id="panel">
+  <div class="phead"><b>파문</b><span>CHROME RIPPLE</span></div>
+  <div id="ctrls"></div>
+  <div class="sec">
+    <p class="sect">화면</p>
+    <div class="grid2">
+      <button class="b" id="b_auto">자동 카메라</button>
+      <button class="b" id="b_shot">다음 샷</button>
+      <button class="b" id="b_mirror">좌우 거울</button>
+      <button class="b" id="b_flip">상하 반전</button>
+      <button class="b" id="b_prev">손짓 보기</button>
+      <button class="b" id="b_calm">수면 재우기</button>
+    </div>
+  </div>
+  <div class="sec">
+    <p class="sect">조작</p>
+    <p class="note">
+      <b>드래그</b> 수면 건드리기 · <b>우클릭 드래그</b> 카메라<br>
+      <b>휠</b> 다가가기 · <kbd>C</kbd> 자동 카메라 · <kbd>Space</kbd> 다음 샷<br>
+      <kbd>H</kbd> 화면 정리 · <kbd>F</kbd> 전체화면 · <kbd>R</kbd> 수면 재우기
+    </p>
+    <p class="note" id="camnote"></p>
+  </div>
+</div>
+
+<div id="stat"></div>
+
+<div id="veil">
+  <h1>파문 — Chrome Ripple</h1>
+  <p>어두운 전시장 바닥에 놓인 2미터 스테인레스 수면.<br>
+     웹캠 앞에서 <em>손을 움직이면</em> 금속이 눌리고 파문이 퍼집니다.</p>
+  <div class="go">화면을 눌러 시작</div>
+  <p class="sub">웹캠을 허용하면 손짓으로, 거부해도 마우스와 무인 연주로 작동합니다</p>
+</div>
+
+<script type="importmap">
+{"imports":{
+  "three":"./libs/three/three.module.js",
+  "three/addons/":"./libs/three/addons/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer }  from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }      from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass }      from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass }      from 'three/addons/postprocessing/OutputPass.js';
+import { HDRLoader }       from 'three/addons/loaders/HDRLoader.js';   // r185: RGBELoader는 이것의 껍데기
+
+/* ═══════════════════════════════════════════════════════════════════
+   치수 — 실제 도면과 같은 값 (미터)
+   ═══════════════════════════════════════════════════════════════════ */
+const SLAB_W = 2.00, SLAB_D = 0.80, SLAB_H = 0.50;
+const TOP_Y   = SLAB_H;     // 수면 기준면
+const MAX_DIP = 0.032;      // 수면이 내려갈 수 있는 한계
+const CUBE    = 0.52;       // 모서리로 선 큐브 한 변
+
+const SIM_W = 512, SIM_H = 205;   // 파동 격자 (2.5 : 1 = 작품 비율)
+const FRC_W = 160, FRC_H = 64;    // 손짓(힘) 격자
+
+/* ═══════════════════════════════════════════════════════════════════
+   조절값 — 패널에서 실시간으로 바뀐다
+   ═══════════════════════════════════════════════════════════════════ */
+const P = {
+  motionGain: 2.2,     // 손짓 감도(움직임)
+  presence:   0.40,    // 머무름 감도(가만히 든 손도 누른다)
+  press:      0.55,    // 눌리는 깊이 (시뮬 단위)
+  damping:    0.9970,  // 물결 지속
+  speed:      0.30,    // 전파 속도 (0.5 넘으면 발산)
+  amp:        0.045,   // 파고 (시뮬 단위 → 미터)
+  swell:      0.0062,  // 얼어붙은 물결 — 사진의 울퉁불퉁한 상판
+  micro:      0.00004, // 잔물결(광택 떨림) — 크면 조명이 깜빡이는 것처럼 보인다
+  rough:      0.115,   // 금속 거칠기
+  env:        'power', // 반사할 환경(HDRI)
+  envI:       0.55,    // 조명 세기 — HDRI를 그대로 쓰면 거울면이 타버린다
+  envRot:     0.9,     // 환경 회전 — 하이라이트가 어디로 눕는지
+  bg:         0.03,    // 배경 비침 — 0이면 완전한 검정. 아주 조금만 비쳐야 작품에 집중된다
+  keyI:       15,      // 바닥 스포트(그림자를 만드는 실제 조명)
+  rimI:       11,      // 측면 스포트
+  exposure:   0.95,    // 노출 — 전시장 프로젝터에 맞추는 값
+  bloom:      0.10,
+  grain:      0.045,
+  autoCam:    true,
+  mirror:     true,
+  flipV:      true,
+  showMotion: true,
+  idleSec:    20,
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   렌더러
+   ═══════════════════════════════════════════════════════════════════ */
+const canvas = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, powerPreference:'high-performance' });
+// 레티나에서 2배로 그리면 픽셀이 1.8배 늘어 GPU가 밀린다. 1.5면 눈으로 구분되지 않는다.
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x020304);
+scene.fog = new THREE.FogExp2(0x020304, 0.085);   // 8m 밖은 어둠에 잠긴다 — 작품에 집중
+
+const camera = new THREE.PerspectiveCamera(34, innerWidth/innerHeight, 0.05, 120);
+
+/* ═══════════════════════════════════════════════════════════════════
+   환경 — 어두운 방에 소프트박스 몇 개.
+   금속은 자기 색이 거의 없다. 보이는 건 '반사되는 것'뿐이라
+   이 가짜 스튜디오가 곧 작품의 표정이 된다.
+   ═══════════════════════════════════════════════════════════════════ */
+// 광원의 끝이 뚝 잘리면 금속에 비친 띠도 뚝 잘린다.
+// 가장자리로 갈수록 0이 되는 마스크를 곱해 반사된 빛줄기의 끝이 사라지게 한다.
+const smoothstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x-a)/(b-a))); return t*t*(3-2*t); };
+function softStripTexture(){
+  const w = 128, h = 48;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(w, h);
+  for (let y=0; y<h; y++) for (let x=0; x<w; x++){
+    const u = (x+0.5)/w, v = (y+0.5)/h;
+    const fu = smoothstep(0, 0.30, u) * smoothstep(1, 0.70, u);   // 길이 방향 — 끝이 길게 사라진다
+    const fv = smoothstep(0, 0.22, v) * smoothstep(1, 0.78, v);   // 폭 방향
+    const a = Math.pow(fu * fv, 1.15) * 255;
+    const p = (y*w + x)*4;
+    img.data[p] = img.data[p+1] = img.data[p+2] = a; img.data[p+3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.NoColorSpace;
+  return t;
+}
+const STRIP_FADE = softStripTexture();
+
+/* 조명 하나하나 — 패널에서 세기를 따로 조절한다.
+   값이 바뀌면 환경맵을 다시 굽는다(금속이 보는 것이 곧 이 배치이므로). */
+const LAMPS = [
+  // 끝을 페이드시키면 광량이 40%쯤 줄어든다 — 세기를 그만큼 올려 잡아 둔다
+  { key:'lampA', name:'천장 띠 1',  w:7.0,  h:0.30, color:0xffffff, i:3.10, max:6,
+    pos:[ 0.0, 5.2,  0.55], rot:[Math.PI/2, 0,  0.02] },
+  { key:'lampB', name:'천장 띠 2',  w:6.0,  h:0.22, color:0xf2f6ff, i:2.40, max:6,
+    pos:[-0.3, 5.6, -0.70], rot:[Math.PI/2, 0, -0.05] },
+  { key:'lampC', name:'천장 띠 3',  w:4.0,  h:0.18, color:0xffeedd, i:1.20, max:6,
+    pos:[ 0.8, 4.6,  1.60], rot:[Math.PI/2, 0,  0.10] },
+  { key:'lampD', name:'측광',       w:2.4,  h:0.70, color:0xa8c2ff, i:1.80, max:6,
+    pos:[-5.6, 2.3, -1.20], rot:[0, Math.PI/2, 0] },
+  { key:'lampE', name:'뒤 림라이트', w:2.0,  h:0.55, color:0xffe8cc, i:1.40, max:6,
+    pos:[ 1.6, 2.6, -6.20], rot:[0, 0, 0] },
+  { key:'lampF', name:'바닥 되비침', w:14.0, h:14.0, color:0x2c3a52, i:0.16, max:1,
+    pos:[ 0.0, 0.02, 0.0], rot:[-Math.PI/2, 0, 0], noFade:true },
+];
+for (const l of LAMPS) P[l.key] = l.i;
+
+function areaLight(l, scale){
+  const m = new THREE.MeshBasicMaterial({ map: l.noFade ? null : STRIP_FADE });
+  m.color.set(l.color).multiplyScalar(P[l.key] * scale);   // 1을 넘는 값 → HDR 환경맵
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(l.w, l.h), m);
+  mesh.position.set(...l.pos);
+  mesh.rotation.set(...l.rot);
+  return mesh;
+}
+// hdr가 주어지면 그 환경 안에 조명 띠를 함께 세워 굽는다.
+// 방 자체가 완전한 검정이면 금속은 '점만 튀는 검은 덩어리'가 된다.
+// 중간톤이 통째로 비쳐야 스테인레스가 형태로 읽힌다.
+function buildEnvironment(hdr){
+  const s = new THREE.Scene();
+  const k = hdr ? 0.42 : 1.0;                 // HDRI가 이미 밝히므로 띠는 약하게
+  if (hdr){
+    s.add(new THREE.Mesh(new THREE.SphereGeometry(40, 48, 32),
+      new THREE.MeshBasicMaterial({ map:hdr, side:THREE.BackSide })));
+  } else {
+    s.add(new THREE.Mesh(new THREE.BoxGeometry(26, 13, 26),
+      new THREE.MeshStandardMaterial({ color:0x11151c, roughness:1, metalness:0, side:THREE.BackSide })));
+  }
+  for (const l of LAMPS){
+    if (l.key === 'lampF' && hdr) continue;   // HDRI에는 이미 바닥이 있다
+    if (P[l.key] > 0.0005) s.add(areaLight(l, k));
+  }
+  return s;
+}
+/* HDRI — 반사원으로만 쓴다. 배경 화면은 어둡게 두어야 작품에 집중된다.
+   Poly Haven CC0 번들 (22번 수은 스케치에서 가져옴) */
+const ENVS = [
+  { id:'room',   name:'어두운 전시장', file:null },
+  { id:'power',  name:'폐공장',       file:'peppermint_powerplant_1k.hdr' },
+  { id:'studio', name:'촬영 스튜디오', file:'studio_small_09_1k.hdr' },
+  { id:'night',  name:'달 없는 밤',    file:'moonless_golf_1k.hdr' },
+  { id:'sunset', name:'노을',         file:'venice_sunset_1k.hdr' },
+  { id:'field',  name:'들녘',         file:'autumn_field_puresky_1k.hdr' },
+];
+const pmrem = new THREE.PMREMGenerator(renderer);
+const hdrCache = new Map();            // 정규화까지 끝낸 원본 HDRI (조명을 바꾸면 다시 굽는다)
+const BLACK = new THREE.Color(0x020304);
+let envRT = null;                      // 지금 구워 놓은 환경맵
+let envnote = null, envBtns = [];      // 패널이 만들어지기 전에도 안전하도록
+
+// HDRI마다 노출이 제각각이다 — 폐공장은 창이 타고 밤은 새까맣다.
+// 평균 밝기를 같은 값으로 맞추고, 밝은 쪽만 부드럽게 눌러 굽는다.
+// 거울면이 하얗게 타버리는 것을 막는 가장 확실한 자리가 여기다.
+function normalizeHDR(tex, targetMean = 0.45, knee = 3.0){
+  const d = tex.image && tex.image.data;
+  if (!d || !(d instanceof Float32Array)) return;
+  let sum = 0, n = 0;
+  for (let i = 0; i + 2 < d.length; i += 4*29){       // 29픽셀마다 표본
+    sum += 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2]; n++;
+  }
+  const mean = n ? sum / n : 1;
+  const gain = mean > 1e-6 ? THREE.MathUtils.clamp(targetMean / mean, 0.02, 60) : 1;
+  for (let i = 0; i + 2 < d.length; i += 4){
+    for (let c = 0; c < 3; c++){
+      const v = d[i+c] * gain;
+      d[i+c] = v / (1 + v / knee);                    // 부드러운 무릎 — 밝은 곳만 눌린다
+    }
+  }
+  tex.needsUpdate = true;
+}
+
+function applyBackground(){
+  if (P.bg > 0.002 && scene.environment){
+    scene.background = scene.environment;      // PMREM 결과라야 흐리기가 먹는다
+    scene.backgroundBlurriness = 0.92;
+    scene.backgroundIntensity = P.bg;
+  } else {
+    scene.background = BLACK;
+  }
+}
+// HDRI를 그대로 굽지 않고, 그 안에 조명 띠를 세워 함께 굽는다.
+// 조명 세기를 하나라도 만지면 여기를 다시 지난다 — 금속이 보는 것이 곧 이 배치이므로.
+function bakeEnvironment(){
+  const hdr = P.env === 'room' ? null : hdrCache.get(P.env);
+  const es = buildEnvironment(hdr);
+  const rt = pmrem.fromScene(es, 0.02);
+  es.traverse(o => { if (o.isMesh){ o.geometry.dispose(); o.material.dispose(); } });  // 텍스처는 공유라 남긴다
+  if (envRT) envRT.dispose();
+  envRT = rt;
+  scene.environment = rt.texture;
+  scene.environmentIntensity = P.envI;
+  scene.environmentRotation = new THREE.Euler(0, P.envRot, 0);
+  scene.backgroundRotation  = new THREE.Euler(0, P.envRot, 0);
+  applyBackground();
+}
+let bakeTimer = 0;
+const scheduleBake = () => { clearTimeout(bakeTimer); bakeTimer = setTimeout(bakeEnvironment, 120); };
+
+async function setEnvironment(id){
+  const def = ENVS.find(e => e.id === id) || ENVS[0];
+  P.env = def.id;
+  if (def.file && !hdrCache.has(def.id)){
+    if (envnote) envnote.textContent = def.name + ' 불러오는 중…';
+    const hdr = await new HDRLoader().setDataType(THREE.FloatType)
+                      .setPath('./assets/hdri/').loadAsync(def.file);
+    normalizeHDR(hdr);
+    hdrCache.set(def.id, hdr);
+  }
+  bakeEnvironment();
+  if (envnote) envnote.textContent = def.name;
+  for (const b of envBtns) b.classList.toggle('on', b.dataset.env === P.env);
+}
+
+/* 실제 조명 — 바닥 그림자와 빛웅덩이 */
+const key = new THREE.SpotLight(0xffffff, P.keyI, 15, 0.50, 0.93, 2);
+key.position.set(0.9, 5.6, 1.7);
+key.target.position.set(0, TOP_Y, 0);
+key.castShadow = true;
+key.shadow.mapSize.set(1024, 1024);
+key.shadow.camera.near = 1; key.shadow.camera.far = 13;
+key.shadow.bias = -0.0012; key.shadow.radius = 3;
+scene.add(key, key.target);
+
+const rimLight = new THREE.SpotLight(0xa8c4ff, 11, 17, 0.70, 1.0, 2);
+rimLight.position.set(-4.8, 3.2, -3.8);
+rimLight.target.position.set(0, TOP_Y, 0);
+scene.add(rimLight, rimLight.target);
+scene.add(new THREE.AmbientLight(0x141c2a, 0.5));
+
+/* ═══════════════════════════════════════════════════════════════════
+   전시장 — 바닥과 어둠뿐
+   ═══════════════════════════════════════════════════════════════════ */
+function streakTexture(w, h, lines, contrast){
+  // 헤어라인 가공 흉내 — 사진 속 옆면의 결
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  g.fillStyle = '#808080'; g.fillRect(0,0,w,h);
+  for (let i=0;i<lines;i++){
+    const y = Math.random()*h;
+    const v = Math.random()<0.5 ? 0 : 255;
+    g.strokeStyle = `rgba(${v},${v},${v},${Math.random()*contrast})`;
+    g.lineWidth = Math.random()*1.6 + 0.3;
+    g.beginPath(); g.moveTo(0, y); g.lineTo(w, y + (Math.random()-0.5)*2); g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();   // 없으면 옆면에 무아레가 생긴다
+  return t;
+}
+
+/* 두들겨 편 물결 — 큐브 면에 쓰는 법선맵. 정수 파수만 써서 이음매 없이 반복된다 */
+function hammeredNormalMap(size, strength){
+  const waves = [];
+  for (let i=0;i<11;i++){
+    const nx = Math.round(Math.random()*10) - 5;
+    const ny = Math.round(Math.random()*10) - 5;
+    if (nx === 0 && ny === 0){ i--; continue; }
+    waves.push({ nx, ny, ph: Math.random()*Math.PI*2, amp: 1/Math.pow(Math.hypot(nx,ny), 1.15) });
+  }
+  const H = new Float32Array(size*size);
+  for (let y=0;y<size;y++) for (let x=0;x<size;x++){
+    const u = x/size, v = y/size; let s = 0;
+    for (const w of waves) s += Math.sin(Math.PI*2*(u*w.nx + v*w.ny) + w.ph) * w.amp;
+    H[y*size+x] = s;
+  }
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(size, size);
+  const at = (x,y) => H[((y+size)%size)*size + ((x+size)%size)];
+  for (let y=0;y<size;y++) for (let x=0;x<size;x++){
+    const dx = (at(x+1,y) - at(x-1,y)) * strength;
+    const dy = (at(x,y+1) - at(x,y-1)) * strength;
+    const len = Math.hypot(-dx, -dy, 1);
+    const p = (y*size+x)*4;
+    img.data[p+0] = ((-dx/len)*0.5 + 0.5) * 255;
+    img.data[p+1] = ((-dy/len)*0.5 + 0.5) * 255;
+    img.data[p+2] = (( 1  /len)*0.5 + 0.5) * 255;
+    img.data[p+3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.NoColorSpace;
+  return t;
+}
+
+const STREAK = streakTexture(1024, 256, 700, 0.16);   // 몸통과 옆면이 같은 결을 쓴다
+STREAK.repeat.set(1.5, 1);
+
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60),
+  new THREE.MeshStandardMaterial({ color:0x080a0d, roughness:0.55, metalness:0.20, envMapIntensity:0.10 }));
+floor.rotation.x = -Math.PI/2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+function radialSprite(inner, mid){
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(128,128,0, 128,128,128);
+  gr.addColorStop(0, inner); gr.addColorStop(0.45, mid); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.fillRect(0,0,256,256);
+  return new THREE.CanvasTexture(c);
+}
+const pool = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 3.2),
+  new THREE.MeshBasicMaterial({ map:radialSprite('rgba(255,255,255,0.55)','rgba(170,198,255,0.12)'),
+    transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, opacity:0.11 }));
+pool.rotation.x = -Math.PI/2; pool.position.y = 0.002;
+scene.add(pool);
+
+/* 광선 — 조명이 먼지 속을 지나는 원뿔 */
+const beamProto = new THREE.ShaderMaterial({
+  uniforms:{ uColor:{value:new THREE.Color(0xbdd4ff)}, uOpacity:{value:0.05} },
+  vertexShader:`
+    varying vec3 vN; varying vec3 vW; varying float vH;
+    void main(){
+      vN = normalize(mat3(modelMatrix) * normal);
+      vec4 w = modelMatrix * vec4(position,1.0);
+      vW = w.xyz; vH = uv.y;
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }`,
+  fragmentShader:`
+    uniform vec3 uColor; uniform float uOpacity;
+    varying vec3 vN; varying vec3 vW; varying float vH;
+    void main(){
+      vec3 d = cameraPosition - vW;
+      float dist = length(d);
+      vec3 v = d / max(dist, 1e-4);
+      float edge = pow(1.0 - abs(dot(normalize(vN), v)), 2.2);   // 실루엣에서 두꺼워 보이는 성질
+      float fall = smoothstep(0.0, 0.5, vH) * smoothstep(1.0, 0.3, vH);
+      // 카메라가 원뿔 면에 가까워지거나 안으로 들어가면 사라진다.
+      // 이게 없으면 경계를 지날 때 가산합성 면이 화면을 덮어 번쩍인다.
+      float near = smoothstep(0.25, 2.0, dist);
+      gl_FragColor = vec4(uColor, uOpacity * edge * fall * near);
+    }`,
+  transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide
+});
+function beam(x, z, top, botR, color, op){
+  const m = beamProto.clone();
+  m.uniforms.uColor.value = new THREE.Color(color);
+  m.uniforms.uOpacity.value = op;
+  const mesh = new THREE.Mesh(new THREE.ConeGeometry(botR, top, 40, 12, true), m);
+  mesh.position.set(x, top/2, z);
+  scene.add(mesh);
+}
+beam(0.7, 1.0, 5.4, 1.6, 0xd8e6ff, 0.022);
+beam(-3.4, -2.6, 4.2, 1.2, 0x93aad8, 0.012);
+
+/* 먼지 */
+let motes;
+(function dust(){
+  const N = 900, pos = new Float32Array(N*3);
+  for (let i=0;i<N;i++){
+    pos[i*3+0] = (Math.random()-0.5)*11;
+    pos[i*3+1] = Math.random()*4.2 + 0.05;
+    pos[i*3+2] = (Math.random()-0.5)*9;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  // 렌즈 바로 앞을 지나는 먼지는 거대한 밝은 점이 되어 번쩍인다.
+  // 가까운 것과 아주 먼 것을 모두 지우는 전용 셰이더를 쓴다.
+  const m = new THREE.ShaderMaterial({
+    // uSize는 '1m 거리에서의 픽셀 크기'다. 화면 높이·화각과 무관하게 대략 맞으면 된다.
+    uniforms:{ uColor:{value:new THREE.Color(0xdce8ff)}, uOpacity:{value:0.30}, uSize:{value:20} },
+    vertexShader:`
+      uniform float uSize; varying float vA;
+      void main(){
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        float d = -mv.z;
+        vA = smoothstep(1.2, 2.8, d) * smoothstep(13.0, 6.0, d);
+        gl_PointSize = clamp(uSize / max(d, 0.001), 1.0, 9.0);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader:`
+      uniform vec3 uColor; uniform float uOpacity; varying float vA;
+      void main(){
+        float r = length(gl_PointCoord - 0.5);
+        float a = smoothstep(0.5, 0.0, r);
+        gl_FragColor = vec4(uColor, a * a * vA * uOpacity);
+      }`,
+    transparent:true, blending:THREE.AdditiveBlending, depthWrite:false });
+  motes = new THREE.Points(g, m);
+  motes.frustumCulled = false;
+  scene.add(motes);
+})();
+
+/* ═══════════════════════════════════════════════════════════════════
+   파동 시뮬레이터 — 높이 텍스처 두 장을 번갈아 쓴다
+     h' = 2h - h_prev + ∇²h · c²    (감쇠 포함)
+   r 채널 = 지금 높이, g 채널 = 직전 높이
+   ═══════════════════════════════════════════════════════════════════ */
+class WaveSim {
+  constructor(renderer, w, h){
+    this.renderer = renderer;
+    const opt = { type:THREE.HalfFloatType, format:THREE.RGBAFormat,
+                  minFilter:THREE.LinearFilter, magFilter:THREE.LinearFilter,
+                  wrapS:THREE.ClampToEdgeWrapping, wrapT:THREE.ClampToEdgeWrapping,
+                  depthBuffer:false, stencilBuffer:false };
+    this.rt = [ new THREE.WebGLRenderTarget(w,h,opt), new THREE.WebGLRenderTarget(w,h,opt) ];
+    this.cam = new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+    this.mat = new THREE.ShaderMaterial({
+      uniforms:{ uPrev:{value:null}, uForce:{value:null},
+                 uTexel:{value:new THREE.Vector2(1/w, 1/h)},
+                 uSpeed:{value:P.speed}, uDamp:{value:P.damping}, uPress:{value:P.press} },
+      vertexShader:`varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+      fragmentShader:`
+        precision highp float;
+        uniform sampler2D uPrev, uForce;
+        uniform vec2 uTexel; uniform float uSpeed, uDamp, uPress;
+        varying vec2 vUv;
+        void main(){
+          vec4 s = texture2D(uPrev, vUv);
+          float h = s.r, hp = s.g;
+          float l = texture2D(uPrev, vec2(vUv.x-uTexel.x, vUv.y)).r;
+          float r = texture2D(uPrev, vec2(vUv.x+uTexel.x, vUv.y)).r;
+          float d = texture2D(uPrev, vec2(vUv.x, vUv.y-uTexel.y)).r;
+          float u = texture2D(uPrev, vec2(vUv.x, vUv.y+uTexel.y)).r;
+          float lap = (l + r + u + d) - 4.0 * h;
+
+          float nh = (2.0 * h - hp + lap * uSpeed) * uDamp;
+
+          // 손은 힘을 '더하지' 않는다. 목표 깊이까지 '끌어당긴다'.
+          // 아무리 오래 머물러도 눌리는 깊이에 상한이 있고, 떼는 순간 튀어올라 파문이 된다.
+          float f = clamp(texture2D(uForce, vUv).r, 0.0, 1.0);
+          nh = mix(nh, -uPress * f, clamp(f * 3.0, 0.0, 0.92));
+
+          vec2 e = min(vUv, 1.0 - vUv);                    // 벽에서 반사하되 조금 먹는다
+          nh *= mix(0.962, 1.0, smoothstep(0.0, 0.05, min(e.x, e.y)));
+
+          gl_FragColor = vec4(clamp(nh, -4.0, 4.0), h, 0.0, 1.0);
+        }`
+    });
+    this.sc = new THREE.Scene();
+    this.sc.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2), this.mat));
+    this.i = 0;
+    this.clear();
+  }
+  clear(){
+    const old = this.renderer.getRenderTarget();
+    for (const t of this.rt){ this.renderer.setRenderTarget(t); this.renderer.clear(true,false,false); }
+    this.renderer.setRenderTarget(old);
+  }
+  step(forceTex){
+    const u = this.mat.uniforms;
+    u.uPrev.value = this.rt[this.i].texture;
+    u.uForce.value = forceTex;
+    u.uSpeed.value = P.speed; u.uDamp.value = P.damping; u.uPress.value = P.press;
+    const dst = 1 - this.i;
+    const old = this.renderer.getRenderTarget();
+    this.renderer.setRenderTarget(this.rt[dst]);
+    this.renderer.render(this.sc, this.cam);
+    this.renderer.setRenderTarget(old);
+    this.i = dst;
+  }
+  get texture(){ return this.rt[this.i].texture; }
+}
+const sim = new WaveSim(renderer, SIM_W, SIM_H);
+
+/* ═══════════════════════════════════════════════════════════════════
+   수면 — 크롬 액체
+     너울(얼어붙은 물결) + 시뮬 파문 + 잔물결(광택 떨림)
+   법선은 정점이 아니라 픽셀에서 계산한다. 면 분할보다 잘게 반짝인다.
+   ═══════════════════════════════════════════════════════════════════ */
+const GLSL_WAVES = `
+  // (높이, dh/dx, dh/dz) — 해석적 미분이라 형상과 음영이 어긋나지 않는다
+  // 진폭을 파수에 1/k^0.8 로 준다. 1/k^1.5 처럼 급히 죽이면 잔면의 기울기가 0에 수렴해
+  // 하이라이트가 큰 방울로만 뭉친다 — 구겨진 은박처럼 보이려면 잔면도 기울기를 가져야 한다.
+  vec3 swellHG(vec2 p, float t){
+    vec3 a = vec3(0.0); vec2 d; float k, w, m, ph;
+    d = normalize(vec2( 1.00, 0.35)); k =  3.10; w = 0.50; m = 1.000;   // 파장 2.0 m
+    ph = dot(p,d)*k + t*w; a.x += m*sin(ph); a.yz += m*k*cos(ph)*d;
+    d = normalize(vec2(-0.40, 1.00)); k =  5.40; w = 0.68; m = 0.760;   // 1.16 m
+    ph = dot(p,d)*k + t*w; a.x += m*sin(ph); a.yz += m*k*cos(ph)*d;
+    d = normalize(vec2( 0.85,-0.62)); k =  8.70; w = 0.90; m = 0.560;   // 0.72 m
+    ph = dot(p,d)*k + t*w; a.x += m*sin(ph); a.yz += m*k*cos(ph)*d;
+    // 여기부터는 방향을 촘촘히 흩어 놓는다. 몇 개 안 되면 나란한 줄무늬(호랑이 가죽)로 보인다.
+    d = normalize(vec2( 0.20, 0.98)); k = 13.50; w = 1.15; m = 0.400;   // 0.47 m
+    ph = dot(p,d)*k + t*w; a.x += m*sin(ph); a.yz += m*k*cos(ph)*d;
+    d = normalize(vec2(-0.93, 0.36)); k = 17.00; w = 1.30; m = 0.330;   // 0.37 m
+    ph = dot(p,d)*k + t*w; a.x += m*sin(ph); a.yz += m*k*cos(ph)*d;
+    d = normalize(vec2( 0.62,-0.79)); k = 20.00; w = 1.45; m = 0.260;   // 0.31 m
+    ph = dot(p,d)*k + t*w; a.x += m*sin(ph); a.yz += m*k*cos(ph)*d;
+    d = normalize(vec2(-0.31,-0.95)); k = 24.00; w = 1.62; m = 0.210;   // 0.26 m
+    ph = dot(p,d)*k + t*w; a.x += m*sin(ph); a.yz += m*k*cos(ph)*d;
+    d = normalize(vec2( 0.71, 0.70)); k = 29.00; w = 1.80; m = 0.160;   // 0.22 m — 큐브 요철과 같은 크기
+    ph = dot(p,d)*k + t*w; a.x += m*sin(ph); a.yz += m*k*cos(ph)*d;
+    d = normalize(vec2( 0.98,-0.20)); k = 34.00; w = 2.05; m = 0.125;   // 0.18 m
+    ph = dot(p,d)*k + t*w; a.x += m*sin(ph); a.yz += m*k*cos(ph)*d;
+    return a;
+  }
+  // 기울기만 — 표면을 밀지 않고 빛만 떨리게 한다
+  vec2 microG(vec2 p, float t){
+    vec2 g = vec2(0.0); vec2 d; float k, w, m, ph;
+    d = normalize(vec2( 0.90, 0.44)); k = 168.0; w = 2.3; m = 1.00;
+    ph = dot(p,d)*k + t*w; g += m*k*cos(ph)*d;
+    d = normalize(vec2(-0.62, 0.79)); k = 233.0; w = 3.1; m = 0.62;
+    ph = dot(p,d)*k + t*w; g += m*k*cos(ph)*d;
+    d = normalize(vec2( 0.31,-0.95)); k = 301.0; w = 1.7; m = 0.40;
+    ph = dot(p,d)*k + t*w; g += m*k*cos(ph)*d;
+    return g;
+  }`;
+
+const waterU = {
+  uHeight:{ value:null },
+  uHTexel:{ value:new THREE.Vector2(1/SIM_W, 1/SIM_H) },
+  uSize:{   value:new THREE.Vector2(SLAB_W, SLAB_D) },
+  uAmp:{    value:P.amp },
+  uSwell:{  value:P.swell },
+  uMicro:{  value:P.micro },
+  uTime:{   value:0 },
+  uMaxDip:{ value:MAX_DIP },
+  uNAA:{    value:0.22 },   // 스페큘러 안티앨리어싱 세기 — 크면 수면이 대리석처럼 흐려진다
+};
+
+// isSkirt: 옆면은 윗줄(local y=0)만 수면을 따라가고 법선은 그대로 둔다.
+// 재질은 몸통과 같은 헤어라인 스테인레스라, 상판에서 옆면으로 이어지는 가로줄이 생기지 않는다.
+function makeSurfaceMaterial(isSkirt){
+  const m = new THREE.MeshPhysicalMaterial({
+    color: isSkirt ? 0x8d939b : 0xc9ced6, metalness:1.0,
+    roughness: isSkirt ? 0.26 : P.rough, envMapIntensity:1.0,
+    roughnessMap: isSkirt ? STREAK : null });
+  m.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, waterU);
+    sh.vertexShader = `
+      uniform sampler2D uHeight; uniform vec2 uSize; uniform float uAmp, uSwell, uTime, uMaxDip;
+      varying vec2 vSUv; varying vec2 vSP; varying vec3 vTanX; varying vec3 vTanZ;
+      ${GLSL_WAVES}
+    ` + sh.vertexShader.replace('#include <begin_vertex>', `
+      #include <begin_vertex>
+      vSP  = vec2(position.x, position.z);
+      vSUv = vec2(vSP.x / uSize.x + 0.5, 0.5 - vSP.y / uSize.y);
+      float hs = clamp(texture2D(uHeight, vSUv).r * uAmp, -uMaxDip, uMaxDip);
+      float lift = hs + swellHG(vSP, uTime).x * uSwell;
+      ${isSkirt ? 'lift *= step(-0.0005, position.y);' : ''}
+      transformed.y += lift;
+      vTanX = normalMatrix * vec3(1.0, 0.0, 0.0);
+      vTanZ = normalMatrix * vec3(0.0, 0.0, 1.0);
+    `);
+    if (isSkirt) return;
+    sh.fragmentShader = `
+      uniform sampler2D uHeight; uniform vec2 uHTexel, uSize;
+      uniform float uAmp, uSwell, uMicro, uTime, uNAA;
+      varying vec2 vSUv; varying vec2 vSP; varying vec3 vTanX; varying vec3 vTanZ;
+      ${GLSL_WAVES}
+    ` + sh.fragmentShader.replace('#include <normal_fragment_begin>', `
+      #include <normal_fragment_begin>
+      {
+        float hL = texture2D(uHeight, vSUv - vec2(uHTexel.x, 0.0)).r;
+        float hR = texture2D(uHeight, vSUv + vec2(uHTexel.x, 0.0)).r;
+        float hD = texture2D(uHeight, vSUv - vec2(0.0, uHTexel.y)).r;
+        float hU = texture2D(uHeight, vSUv + vec2(0.0, uHTexel.y)).r;
+        // 화면 좌표가 아니라 실제 미터 단위 기울기
+        float dhdx =  (hR - hL) * 0.5 / (uSize.x * uHTexel.x) * uAmp;
+        float dhdz = -(hU - hD) * 0.5 / (uSize.y * uHTexel.y) * uAmp;
+        vec3 sw = swellHG(vSP, uTime);
+        dhdx += sw.y * uSwell;  dhdz += sw.z * uSwell;
+        vec2 mg = microG(vSP, uTime);
+        dhdx += mg.x * uMicro;  dhdz += mg.y * uMicro;
+        normal = normalize(normal - vTanX * dhdx - vTanZ * dhdz);
+        // 스페큘러 안티앨리어싱 — 화면에서 법선이 빨리 변하는 곳은 거칠게 만들어
+        // 픽셀보다 작은 잔주름이 반짝임 대신 흐린 반사가 되게 한다
+        roughnessFactor = clamp(roughnessFactor + length(fwidth(normal)) * uNAA, 0.0, 1.0);
+      }
+    `);
+  };
+  return m;
+}
+
+// 법선을 픽셀에서 계산하므로 면 분할은 '형태'만 담으면 된다.
+// 여기를 키워도 반짝임은 안 늘고 GPU만 밀린다 — 밀리면 프레임을 건너뛰어 화면이 깜빡인다.
+const SEG_X = 240, SEG_Y = 96;
+const waterMat = makeSurfaceMaterial(false);
+const waterGeo = new THREE.PlaneGeometry(SLAB_W, SLAB_D, SEG_X, SEG_Y);
+waterGeo.rotateX(-Math.PI/2);
+const water = new THREE.Mesh(waterGeo, waterMat);
+water.position.y = TOP_Y;
+water.frustumCulled = false;
+scene.add(water);
+
+/* 옆면 — 수면 가장자리에서 바닥까지 이어지는 한 장.
+   윗줄만 수면과 똑같이 밀리므로 실루엣이 사진처럼 울퉁불퉁해지고,
+   상판과 옆판을 나누는 가로줄이 생기지 않는다. */
+function buildWall(){
+  const hw = SLAB_W/2, hd = SLAB_D/2;
+  const path = [];
+  for (let i=0;i<=SEG_X;i++) path.push([-hw + SLAB_W*i/SEG_X, -hd]);
+  for (let i=1;i<=SEG_Y;i++) path.push([ hw, -hd + SLAB_D*i/SEG_Y]);
+  for (let i=1;i<=SEG_X;i++) path.push([ hw - SLAB_W*i/SEG_X,  hd]);
+  for (let i=1;i<=SEG_Y;i++) path.push([-hw,  hd - SLAB_D*i/SEG_Y]);
+  path.push([-hw, -hd]);
+
+  const pos = [], nor = [], uv = [];
+  let run = 0;
+  for (let i=0;i<path.length-1;i++){
+    const a = path[i], b = path[i+1];
+    const ex = b[0]-a[0], ez = b[1]-a[1], L = Math.hypot(ex, ez);
+    const nx = ez/L, nz = -ex/L;                       // 바깥쪽 법선
+    const ua = run / 1.2, ub = (run + L) / 1.2;        // 헤어라인 결이 둘레를 따라 이어지게
+    run += L;
+    const at = [a[0], 0, a[1], ua, 1], bt = [b[0], 0, b[1], ub, 1];
+    const ab = [a[0], -TOP_Y, a[1], ua, 0], bb = [b[0], -TOP_Y, b[1], ub, 0];
+    for (const v of [at, bt, ab,  bt, bb, ab]){
+      pos.push(v[0], v[1], v[2]); nor.push(nx, 0, nz); uv.push(v[3], v[4]);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal',   new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv',       new THREE.Float32BufferAttribute(uv, 2));
+  const wall = new THREE.Mesh(g, makeSurfaceMaterial(true));
+  wall.position.y = TOP_Y;
+  wall.frustumCulled = false;
+  wall.castShadow = true;
+  scene.add(wall);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   덩어리 — 헤어라인 스테인레스 몸통
+   ═══════════════════════════════════════════════════════════════════ */
+const steel = new THREE.MeshPhysicalMaterial({
+  color:0x8d939b, metalness:1.0, roughness:0.26, envMapIntensity:1.0, roughnessMap:STREAK });
+
+// 속 — 옆면 한 장이 겉을 다 덮으므로 이건 안쪽을 막고 그림자를 만드는 역할만 한다.
+// 3mm 안쪽으로 넣어 옆면과 겹치지 않게 하고, 수면이 가장 깊이 내려간 자리보다 낮게 둔다.
+const bodyH = TOP_Y - MAX_DIP - 0.010;
+const body = new THREE.Mesh(new THREE.BoxGeometry(SLAB_W - 0.006, bodyH, SLAB_D - 0.006), steel);
+body.position.y = bodyH/2;
+body.castShadow = true; body.receiveShadow = true;
+scene.add(body);
+buildWall();
+
+/* ═══════════════════════════════════════════════════════════════════
+   큐브 — 모서리로 서서 수면에 잠긴 거울 덩어리
+   ═══════════════════════════════════════════════════════════════════ */
+const cubeMat = new THREE.MeshPhysicalMaterial({
+  color:0xd2d7de, metalness:1.0, roughness:0.10, envMapIntensity:1.0,
+  normalMap: hammeredNormalMap(512, 11), normalScale:new THREE.Vector2(0.30, 0.30) });
+cubeMat.normalMap.repeat.set(0.9, 0.9);   // 잔 요철이 많으면 거울 수백 개가 되어 눈이 부시다
+
+const cube = new THREE.Mesh(new THREE.BoxGeometry(CUBE, CUBE, CUBE, 2, 2, 2), cubeMat);
+cube.castShadow = true;
+const CUBE_X = 0.42, CUBE_Z = 0.02;
+const CUBE_SINK = 0.085;                                   // 아래 꼭짓점이 수면 밑으로 잠긴 깊이
+const cubeBase = new THREE.Quaternion().setFromUnitVectors(
+  new THREE.Vector3(1,1,1).normalize(), new THREE.Vector3(0,1,0));   // 몸통 대각선을 세운다
+const cubeLean = new THREE.Quaternion().setFromAxisAngle(
+  new THREE.Vector3(0.35, 0, 1).normalize(), 0.22);                  // 사진처럼 기울여 세운다
+cube.position.set(CUBE_X, TOP_Y + CUBE*Math.sqrt(3)/2 - CUBE_SINK, CUBE_Z);
+scene.add(cube);
+
+/* ═══════════════════════════════════════════════════════════════════
+   힘의 장 — 웹캠 손짓 + 포인터 + 큐브 + 무인 연주가 한 장에 합쳐진다
+   ═══════════════════════════════════════════════════════════════════ */
+const fAcc  = new Float32Array(FRC_W * FRC_H);
+const fByte = new Uint8Array(FRC_W * FRC_H);
+const forceTex = new THREE.DataTexture(fByte, FRC_W, FRC_H, THREE.RedFormat, THREE.UnsignedByteType);
+forceTex.minFilter = forceTex.magFilter = THREE.LinearFilter;
+forceTex.needsUpdate = true;
+
+// 더하지 않고 큰 값을 남긴다 — '지금 여기에 얼마나 눌려 있나'를 담는 장이라 누적이면 안 된다
+function stamp(u, v, radiusM, amount){
+  const rx = Math.max(1, (radiusM / SLAB_W) * FRC_W);
+  const ry = Math.max(1, (radiusM / SLAB_D) * FRC_H);
+  const cx = u * FRC_W, cy = v * FRC_H;
+  const x0 = Math.max(0, Math.floor(cx-rx*2)), x1 = Math.min(FRC_W-1, Math.ceil(cx+rx*2));
+  const y0 = Math.max(0, Math.floor(cy-ry*2)), y1 = Math.min(FRC_H-1, Math.ceil(cy+ry*2));
+  for (let y=y0; y<=y1; y++){
+    const dy = (y+0.5-cy)/ry;
+    for (let x=x0; x<=x1; x++){
+      const dx = (x+0.5-cx)/rx;
+      const i = y*FRC_W+x;
+      const v2 = amount * Math.exp(-(dx*dx + dy*dy)*1.6);
+      if (v2 > fAcc[i]) fAcc[i] = v2;
+    }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   웹캠
+   ═══════════════════════════════════════════════════════════════════ */
+const video = document.getElementById('cam');
+const mcv = document.getElementById('mcv'), mctx = mcv.getContext('2d');
+const menergy = document.getElementById('menergy');
+const camnote = document.getElementById('camnote');
+
+const grab = document.createElement('canvas'); grab.width = FRC_W; grab.height = FRC_H;
+const gctx = grab.getContext('2d', { willReadFrequently:true });
+const lumaPrev = new Float32Array(FRC_W*FRC_H);   // 직전 프레임 → 순간 움직임
+const lumaBg   = new Float32Array(FRC_W*FRC_H);   // 느린 배경 → 머물러 있는 존재
+let camReady = false, camWarm = false, motionEnergy = 0, lastMotionAt = -1e9, clock = 0;
+
+async function startCamera(){
+  if (!navigator.mediaDevices?.getUserMedia){
+    camnote.textContent = '웹캠 없음 — 이 브라우저는 카메라를 지원하지 않습니다. 마우스와 무인 연주로 작동합니다.';
+    return;
+  }
+  try {
+    video.srcObject = await navigator.mediaDevices.getUserMedia({
+      video:{ width:{ideal:640}, height:{ideal:480}, facingMode:'user' }, audio:false });
+    await video.play();
+    camReady = true;
+    camnote.textContent = '웹캠 연결됨 — 카메라 앞에서 손을 움직이세요.';
+  } catch (e){
+    const secure = location.protocol === 'https:' ||
+                   location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    camnote.textContent = secure
+      ? '웹캠 거부됨 — 마우스와 무인 연주로 작동합니다.'
+      : '웹캠 불가 — 파일을 직접 연 상태입니다. 폴더에서 python3 -m http.server 8031 을 띄우고 localhost:8031 로 접속하면 손짓이 켜집니다.';
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   ★ 손짓을 힘으로 바꾸는 규칙 — 이 작품의 성격이 여기서 정해진다
+   지금 규칙: 「자석 같은 손」
+     · 움직임(motion)  = 직전 프레임과의 차이 → 파문을 만든다
+     · 머무름(presence)= 느린 배경과의 차이  → 손을 든 채 멈춰도 눌린 자국이 남고 서서히 풀린다
+   다른 성격으로 바꾸고 싶다면 이 함수만 갈아끼우면 된다:
+     · 움직임의 시작에만 한 번 때리기 → 물방울처럼 똑똑 떨어지는 성격
+     · 손이 간 방향으로 밀기          → 배가 지나간 자국처럼 끌리는 성격
+   ────────────────────────────────────────────────────────────────── */
+function motionToForce(motion, presence){
+  return motion * P.motionGain + presence * P.presence;
+}
+
+function sampleCamera(){
+  if (!camReady || video.readyState < 2 || !video.videoWidth) return;
+  gctx.save();
+  if (P.mirror){ gctx.translate(FRC_W, 0); gctx.scale(-1, 1); }
+  gctx.drawImage(video, 0, 0, FRC_W, FRC_H);
+  gctx.restore();
+  const img = gctx.getImageData(0, 0, FRC_W, FRC_H).data;
+
+  // 첫 프레임은 배경으로만 삼는다. 0에서 시작하면 켜자마자 화면 전체가 눌린다.
+  if (!camWarm){
+    for (let i=0, p=0; i<FRC_W*FRC_H; i++, p+=4){
+      lumaPrev[i] = lumaBg[i] = (img[p]*0.299 + img[p+1]*0.587 + img[p+2]*0.114) / 255;
+    }
+    camWarm = true;
+    return;
+  }
+
+  let energy = 0;
+  for (let i=0, p=0; i<FRC_W*FRC_H; i++, p+=4){
+    const y = (img[p]*0.299 + img[p+1]*0.587 + img[p+2]*0.114) / 255;
+    const motion   = Math.max(0, Math.abs(y - lumaPrev[i]) - 0.035);
+    const presence = Math.max(0, Math.abs(y - lumaBg[i])   - 0.055);
+    lumaPrev[i] = y;
+    lumaBg[i]  += (y - lumaBg[i]) * 0.012;
+    const f = motionToForce(motion, presence);
+    if (f > 0){
+      const row = (i / FRC_W) | 0;                    // 카메라 세로축 → 수면 깊이축
+      const j = (P.flipV ? FRC_H-1-row : row)*FRC_W + (i % FRC_W);
+      if (f > fAcc[j]) fAcc[j] = f;
+      energy += motion;
+    }
+  }
+  motionEnergy = motionEnergy*0.85 + (energy / (FRC_W*FRC_H) * 60) * 0.15;
+  if (motionEnergy > 0.010) lastMotionAt = clock;
+}
+
+/* 무인 연주 — 아무도 없을 때 스스로 일렁인다 */
+let nextDrop = 4;
+function ghostPerform(t){
+  stamp(0.5 + 0.36*Math.sin(t*0.23)*Math.cos(t*0.07), 0.5 + 0.30*Math.sin(t*0.31 + 1.7), 0.22, 0.34);
+  stamp(0.5 + 0.42*Math.sin(t*0.17 + 2.4),            0.5 + 0.26*Math.cos(t*0.26 + 0.4), 0.17, 0.22);
+  if (t > nextDrop){
+    nextDrop = t + 3.5 + Math.random()*6;
+    stamp(0.08 + Math.random()*0.84, 0.15 + Math.random()*0.70, 0.070, 1.0);   // 물방울
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   포인터 — 수면 직접 건드리기 / 우클릭 카메라
+   ═══════════════════════════════════════════════════════════════════ */
+const ray = new THREE.Raycaster();
+const surfPlane = new THREE.Plane(new THREE.Vector3(0,1,0), -TOP_Y);
+const hit = new THREE.Vector3();
+let touching = false, orbiting = false, lastPtr = {x:0, y:0};
+
+function ptrToSurface(ev){
+  const nx = (ev.clientX / innerWidth) * 2 - 1;
+  const ny = -(ev.clientY / innerHeight) * 2 + 1;
+  ray.setFromCamera({x:nx, y:ny}, camera);
+  if (!ray.ray.intersectPlane(surfPlane, hit)) return null;
+  const u = hit.x / SLAB_W + 0.5, v = 0.5 - hit.z / SLAB_D;
+  return (u < 0 || u > 1 || v < 0 || v > 1) ? null : {u, v};
+}
+canvas.addEventListener('pointerdown', (ev)=>{
+  try { canvas.setPointerCapture(ev.pointerId); } catch (e){ /* 합성 이벤트 등 — 무시 */ }
+  if (ev.button === 2 || ev.ctrlKey || ev.shiftKey){
+    orbiting = true; canvas.classList.add('orbit'); P.autoCam = false; syncUI();
+  } else {
+    touching = true;
+    const s = ptrToSurface(ev);
+    if (s) stamp(s.u, s.v, 0.07, 1.0);
+  }
+  lastPtr = {x:ev.clientX, y:ev.clientY};
+});
+canvas.addEventListener('pointermove', (ev)=>{
+  if (orbiting){
+    rig.theta -= (ev.clientX - lastPtr.x) * 0.005;
+    rig.phi = THREE.MathUtils.clamp(rig.phi - (ev.clientY - lastPtr.y) * 0.004, 0.22, 1.50);
+  } else if (touching){
+    const s = ptrToSurface(ev);
+    if (s){ stamp(s.u, s.v, 0.11, 0.8); lastMotionAt = clock; }
+  }
+  lastPtr = {x:ev.clientX, y:ev.clientY};
+});
+addEventListener('pointerup', ()=>{ touching = false; orbiting = false; canvas.classList.remove('orbit'); });
+canvas.addEventListener('contextmenu', e=>e.preventDefault());
+canvas.addEventListener('wheel', (ev)=>{
+  ev.preventDefault();
+  rig.radius = THREE.MathUtils.clamp(rig.radius * (1 + Math.sign(ev.deltaY)*0.07), 1.15, 9);
+  P.autoCam = false; syncUI();
+}, {passive:false});
+
+/* ═══════════════════════════════════════════════════════════════════
+   시네마틱 카메라 — 샷을 물고 천천히 흐르다 다음 샷으로 넘어간다
+   ═══════════════════════════════════════════════════════════════════ */
+const SHOTS = [
+  { theta: 0.95, phi:1.13, r:4.10, fov:34, ty:0.52 },   // 와이드
+  { theta:-0.55, phi:1.42, r:2.55, fov:42, ty:0.56 },   // 낮은 각 — 반사가 길게 눕는다
+  { theta: 1.53, phi:1.28, r:3.30, fov:26, ty:0.55 },   // 길이 방향
+  { theta: 2.35, phi:0.72, r:2.95, fov:38, ty:0.48 },   // 부감
+  { theta:-2.05, phi:1.34, r:2.60, fov:44, ty:0.56 },   // 근접
+];
+const rig = { theta:SHOTS[0].theta, phi:SHOTS[0].phi, radius:SHOTS[0].r, fov:SHOTS[0].fov, ty:SHOTS[0].ty };
+let shotI = 0, shotT = 0, shotFrom = {...rig};
+const DWELL = 17, BLEND = 5.0;
+
+function nextShot(){ shotFrom = {...rig}; shotI = (shotI + 1) % SHOTS.length; shotT = 0; }
+
+function updateCamera(t, dt){
+  if (P.autoCam){
+    shotT += dt;
+    const s = SHOTS[shotI];
+    const k = THREE.MathUtils.clamp(shotT / BLEND, 0, 1);
+    const e = k*k*k*(k*(k*6-15)+10);                   // smootherstep — 붙고 떨어지는 데 가속이 없다
+    rig.theta  = THREE.MathUtils.lerp(shotFrom.theta,  s.theta, e) + shotT*0.0035;
+    rig.phi    = THREE.MathUtils.lerp(shotFrom.phi,    s.phi,   e);
+    rig.radius = THREE.MathUtils.lerp(shotFrom.radius, s.r,     e);
+    rig.fov    = THREE.MathUtils.lerp(shotFrom.fov,    s.fov,   e);
+    rig.ty     = THREE.MathUtils.lerp(shotFrom.ty,     s.ty,    e);
+    if (shotT > DWELL + BLEND) nextShot();
+  }
+  const sp = Math.sin(rig.phi), cp = Math.cos(rig.phi);
+  const hx = Math.sin(t*0.53)*0.006 + Math.sin(t*1.31 + 1.2)*0.003;   // 손떨림
+  const hy = Math.sin(t*0.47 + 2.1)*0.005 + Math.sin(t*1.09 + 0.4)*0.0025;
+  camera.position.set(
+    Math.cos(rig.theta)*sp*rig.radius + hx,
+    cp*rig.radius + rig.ty + hy,
+    Math.sin(rig.theta)*sp*rig.radius + hx*0.6);
+  camera.lookAt(0, rig.ty + hy*0.5, 0);
+  if (Math.abs(camera.fov - rig.fov) > 0.001){ camera.fov = rig.fov; camera.updateProjectionMatrix(); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   후처리 — 블룸 + 비네트 + 그레인 + 아주 약한 색수차
+   ═══════════════════════════════════════════════════════════════════ */
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+// 문턱값은 톤매핑 이전(선형) 밝기에 걸린다. 1을 넘겨야 '진짜 하이라이트'만 번진다.
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), P.bloom, 0.85, 2.20);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+const gradePass = new ShaderPass({
+  uniforms:{ tDiffuse:{value:null}, uTime:{value:0}, uGrain:{value:P.grain},
+             uVig:{value:0.92}, uCA:{value:0.0016} },
+  vertexShader:`varying vec2 vUv;
+    void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader:`
+    uniform sampler2D tDiffuse; uniform float uTime, uGrain, uVig, uCA;
+    varying vec2 vUv;
+    void main(){
+      vec2 c = vUv - 0.5; float r2 = dot(c,c);
+      vec2 off = c * uCA * (0.35 + r2*3.0);
+      vec3 col = vec3(texture2D(tDiffuse, vUv - off).r,
+                      texture2D(tDiffuse, vUv).g,
+                      texture2D(tDiffuse, vUv + off).b);
+      col *= 1.0 - uVig * smoothstep(0.10, 0.90, r2 * 1.55);
+      float n = fract(sin(dot(vUv*vec2(1234.5, 6789.1) + uTime, vec2(12.9898, 78.233))) * 43758.5453);
+      col += (n - 0.5) * uGrain;
+      gl_FragColor = vec4(col, 1.0);
+    }`
+});
+composer.addPass(gradePass);
+
+/* ═══════════════════════════════════════════════════════════════════
+   패널
+   ═══════════════════════════════════════════════════════════════════ */
+const CTRL = [
+  ['손짓', [
+    ['motionGain','손짓 감도', 0.2, 6, 0.05],
+    ['presence','머무름 감도', 0, 1.5, 0.01],
+    ['press','눌리는 깊이', 0.05, 1.5, 0.01],
+  ]],
+  ['수면', [
+    ['damping','물결 지속', 0.985, 0.9995, 0.0005],
+    ['speed','전파 속도', 0.10, 0.45, 0.01],
+    ['amp','파고', 0.005, 0.09, 0.001],
+    ['swell','얼어붙은 물결', 0, 0.016, 0.0002],
+    ['micro','잔물결', 0, 0.0004, 0.00001],
+  ]],
+  ['조명 하나씩', LAMPS.map(l => [l.key, l.name, 0, l.max, l.max/200]).concat([
+    ['keyI','바닥 스포트', 0, 60, 0.5],
+    ['rimI','측면 스포트', 0, 40, 0.5],
+  ])],
+  ['금속과 빛', [
+    ['rough','금속 거칠기', 0.01, 0.30, 0.005],
+    ['envI','조명 세기(전체)', 0.2, 2.5, 0.05],
+    ['envRot','환경 회전', 0, 6.28, 0.02],
+    ['bg','배경 비침', 0, 0.35, 0.005],
+    ['exposure','노출', 0.2, 2.0, 0.05],
+    ['bloom','번짐', 0, 1.6, 0.02],
+    ['grain','필름 입자', 0, 0.16, 0.005],
+  ]],
+];
+const ctrls = document.getElementById('ctrls');
+const valEl = {};
+for (const [secName, items] of CTRL){
+  const sec = document.createElement('div'); sec.className = 'sec';
+  const h = document.createElement('p'); h.className = 'sect'; h.textContent = secName;
+  sec.appendChild(h);
+  for (const [k, label, min, max, step] of items){
+    const field = document.createElement('div'); field.className = 'field';
+    const row = document.createElement('div'); row.className = 'row';
+    const lab = document.createElement('label'); lab.textContent = label;
+    const val = document.createElement('span'); val.className = 'val';
+    row.append(lab, val); field.appendChild(row);
+    const inp = document.createElement('input');
+    inp.type = 'range'; inp.min = min; inp.max = max; inp.step = step; inp.value = P[k];
+    inp.addEventListener('input', ()=>{
+      P[k] = parseFloat(inp.value);
+      applyParams();
+      if (k.startsWith('lamp')) scheduleBake();   // 조명이 바뀌면 환경맵을 다시 굽는다
+    });
+    field.appendChild(inp); sec.appendChild(field);
+    valEl[k] = val;
+  }
+  ctrls.appendChild(sec);
+}
+
+/* 환경(HDRI) 고르기 */
+(function buildEnvUI(){
+  const sec = document.createElement('div'); sec.className = 'sec';
+  const h = document.createElement('p'); h.className = 'sect'; h.textContent = '비치는 환경';
+  sec.appendChild(h);
+  const grid = document.createElement('div'); grid.className = 'grid2';
+  for (const e of ENVS){
+    const b = document.createElement('button');
+    b.className = 'b'; b.textContent = e.name; b.dataset.env = e.id;
+    b.addEventListener('click', ()=>setEnvironment(e.id));
+    grid.appendChild(b); envBtns.push(b);
+  }
+  sec.appendChild(grid);
+  const note = document.createElement('p'); note.className = 'note';
+  sec.appendChild(note); envnote = note;
+  ctrls.appendChild(sec);
+})();
+
+function applyParams(){
+  waterU.uAmp.value   = P.amp;
+  waterU.uSwell.value = P.swell;
+  waterU.uMicro.value = P.micro;
+  waterMat.roughness = P.rough;
+  key.intensity = P.keyI;
+  rimLight.intensity = P.rimI;
+  scene.environmentIntensity = P.envI;
+  scene.environmentRotation = new THREE.Euler(0, P.envRot, 0);
+  scene.backgroundRotation  = new THREE.Euler(0, P.envRot, 0);
+  applyBackground();
+  bloom.strength = P.bloom;
+  gradePass.uniforms.uGrain.value = P.grain;
+  for (const k in valEl){
+    valEl[k].textContent = P[k] < 0.01 ? P[k].toFixed(5) : P[k] < 1 ? P[k].toFixed(3) : P[k].toFixed(2);
+  }
+}
+const btn = id => document.getElementById(id);
+function syncUI(){
+  btn('b_auto').classList.toggle('on', P.autoCam);
+  btn('b_mirror').classList.toggle('on', P.mirror);
+  btn('b_flip').classList.toggle('on', P.flipV);
+  btn('b_prev').classList.toggle('on', P.showMotion);
+}
+btn('b_auto').onclick   = ()=>{ P.autoCam = !P.autoCam; if (P.autoCam){ shotFrom = {...rig}; shotT = 0; } syncUI(); };
+btn('b_shot').onclick   = ()=>{ P.autoCam = true; nextShot(); syncUI(); };
+btn('b_mirror').onclick = ()=>{ P.mirror = !P.mirror; syncUI(); };
+btn('b_flip').onclick   = ()=>{ P.flipV = !P.flipV; syncUI(); };
+btn('b_prev').onclick   = ()=>{ P.showMotion = !P.showMotion;
+                                btn('mwrap').classList.toggle('hidden', !P.showMotion); syncUI(); };
+btn('b_calm').onclick   = ()=>{ sim.clear(); fAcc.fill(0); };
+applyParams(); syncUI();
+const wantEnv = P.env;
+setEnvironment('room');                                  // 즉시 보이는 기본 환경(동기)
+if (wantEnv !== 'room') setEnvironment(wantEnv);         // HDRI는 받는 대로 갈아끼운다
+
+addEventListener('keydown', (e)=>{
+  const k = e.key.toLowerCase();
+  if (k === 'h') for (const id of ['panel','mwrap','title','stat']) btn(id).classList.toggle('hidden');
+  if (k === 'f') document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+  if (k === 'c'){ P.autoCam = !P.autoCam; if (P.autoCam){ shotFrom = {...rig}; shotT = 0; } syncUI(); }
+  if (k === 'r'){ sim.clear(); fAcc.fill(0); }
+  if (e.code === 'Space'){ e.preventDefault(); P.autoCam = true; nextShot(); syncUI(); }
+});
+
+const veil = document.getElementById('veil');
+veil.addEventListener('click', ()=>{
+  veil.classList.add('gone');
+  setTimeout(()=>veil.remove(), 1000);
+  startCamera();
+}, { once:true });
+
+/* ═══════════════════════════════════════════════════════════════════
+   루프
+   ═══════════════════════════════════════════════════════════════════ */
+const statEl = document.getElementById('stat');
+const previewImg = mctx.createImageData(FRC_W, FRC_H);
+let last = performance.now(), acc = 0, fpsAvg = 60, statT = 0, degraded = 0, loggedErr = false;
+const FIXED = 1/60;
+
+function drawMotionPreview(){
+  for (let i=0;i<FRC_W*FRC_H;i++){
+    const v = Math.min(1, fAcc[i] * 0.5);
+    const row = FRC_H - 1 - ((i/FRC_W)|0);           // 텍스처는 아래가 0 → 보기용으로 뒤집는다
+    const q = (row*FRC_W + (i % FRC_W))*4;
+    previewImg.data[q+0] = 217*v + 10;
+    previewImg.data[q+1] = 180*v + 11;
+    previewImg.data[q+2] =  92*v + 14;
+    previewImg.data[q+3] = 255;
+  }
+  mctx.putImageData(previewImg, 0, 0);
+  menergy.textContent = motionEnergy.toFixed(3);
+}
+
+function frame(now){
+  requestAnimationFrame(frame);
+  // 예외가 나면 그 프레임은 그려지지 않고, 캔버스는 지워진 채로 남아 '검은 깜빡임'이 된다.
+  // 그래서 루프는 절대 예외로 빠져나가지 않게 감싸고, 대신 한 번만 알린다.
+  try { tick(now); }
+  catch (err){
+    if (!loggedErr){ loggedErr = true; console.error(err); statEl.textContent = '오류 ' + err.message; }
+  }
+}
+
+function tick(now){
+  const dt = Math.min((now - last)/1000, 0.1); last = now;
+  clock += dt;
+
+  // ── 힘의 장
+  const decay = Math.pow(0.86, dt*60);
+  for (let i=0;i<fAcc.length;i++) fAcc[i] *= decay;
+  sampleCamera();
+  if (clock - lastMotionAt > P.idleSec) ghostPerform(clock);
+  // 큐브가 닿은 자리에서는 늘 파문이 번진다
+  stamp(CUBE_X/SLAB_W + 0.5, 0.5 - CUBE_Z/SLAB_D, 0.17, 0.26 + 0.10*Math.sin(clock*0.9));
+  for (let i=0;i<fAcc.length;i++) fByte[i] = Math.min(255, fAcc[i]*255) | 0;
+  forceTex.needsUpdate = true;
+
+  // ── 파동 — 프레임률과 무관하게 같은 속도로 (최대 3스텝)
+  acc += dt;
+  let steps = 0;
+  while (acc >= FIXED && steps < 3){ sim.step(forceTex); acc -= FIXED; steps++; }
+  if (acc > FIXED*3) acc = 0;
+  waterU.uHeight.value = sim.texture;
+  waterU.uTime.value = clock;
+
+  // ── 큐브는 수면에 얹힌 것처럼 아주 느리게 흔들린다
+  const rock = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+    Math.sin(clock*0.31)*0.020, Math.sin(clock*0.17)*0.05, Math.sin(clock*0.23 + 1.1)*0.024));
+  cube.quaternion.copy(rock).multiply(cubeLean).multiply(cubeBase);
+  cube.position.y = TOP_Y + CUBE*Math.sqrt(3)/2 - CUBE_SINK + Math.sin(clock*0.29)*0.006;
+
+  // ── 손짓에 따라 공간이 아주 살짝 깨어난다
+  const wake = Number.isFinite(motionEnergy) ? Math.min(1, motionEnergy*6) : 0;
+  renderer.toneMappingExposure = P.exposure * (1 + wake*0.12);
+  pool.material.opacity = 0.11 + wake*0.05;
+
+  updateCamera(clock, dt);
+  motes.rotation.y += dt*0.012;
+  motes.position.y = Math.sin(clock*0.13)*0.06;
+  gradePass.uniforms.uTime.value = clock;
+
+  composer.render();
+  if (P.showMotion) drawMotionPreview();
+
+  fpsAvg = fpsAvg*0.94 + (1/Math.max(dt,1e-4))*0.06;
+  statT += dt;
+  if (statT > 0.5){
+    statT = 0;
+    const mode = (clock - lastMotionAt > P.idleSec) ? '무인 연주' : '응답';
+    statEl.textContent = `${fpsAvg.toFixed(0)} FPS · ${camReady?'CAM':'NO CAM'} · ${mode}`;
+    // 밀리면 두 단계로 낮춘다. 프레임을 건너뛰는 것보다 조금 흐린 편이 낫다.
+    if (clock > 6 && fpsAvg < 40){
+      if (degraded === 0){ degraded = 1; renderer.setPixelRatio(1); onResize(); }
+      else if (degraded === 1 && fpsAvg < 30){ degraded = 2; bloom.enabled = false; }
+    }
+  }
+}
+
+function onResize(){
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+  bloom.setSize(innerWidth, innerHeight);
+}
+addEventListener('resize', onResize);
+
+updateCamera(0, 0);
+for (let i=0;i<7;i++) stamp(Math.random(), Math.random(), 0.05, 12);   // 첫 화면이 죽어 있지 않도록
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

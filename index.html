@@ -18,6 +18,7 @@ html,body{height:100%;margin:0;overflow:hidden;background:#000;color:var(--ui-fg
   -webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
 canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:crosshair}
 canvas#gl.orbit{cursor:grabbing}
+canvas#ov{position:fixed;inset:0;pointer-events:none;z-index:10}
 video#cam{position:fixed;width:2px;height:2px;opacity:.001;pointer-events:none;left:-10px;top:-10px}
 
 #title{position:fixed;left:20px;bottom:18px;z-index:15;pointer-events:none}
@@ -84,6 +85,7 @@ kbd{font:inherit;font-size:10px;background:rgba(255,255,255,.09);border:1px soli
 </head>
 <body>
 <canvas id="gl"></canvas>
+<canvas id="ov"></canvas>
 <video id="cam" playsinline muted autoplay></video>
 
 <div id="title">
@@ -208,12 +210,13 @@ const P = {
    무엇이 화면을 흔드는지 알려면 전부 켠 상태에서 하나씩 빼보는 수밖에 없다. */
 const T = {
   webcam:true, camMove:true, beams:true, dust:true, pool:true,
-  bloom:true, grade:true, cube:true, sim:true, swell:true, wake:true,
+  bloom:true, grade:true, cube:true, sim:true, swell:true, wake:true, skeleton:true,
 };
 const TOGGLES = [
   ['webcam','웹캠'], ['camMove','카메라 움직임'], ['beams','광선(원뿔)'], ['dust','먼지 입자'],
   ['pool','빛웅덩이'], ['bloom','윤슬(블룸)'], ['grade','그레인·비네트'], ['cube','큐브'],
   ['sim','파문(시뮬)'], ['swell','너울'], ['wake','손짓 노출 반응'],
+  ['skeleton','화면에 손 뼈대'],
 ];
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -1488,9 +1491,46 @@ veil.addEventListener('click', ()=>{
    루프
    ═══════════════════════════════════════════════════════════════════ */
 const statEl = document.getElementById('stat');
+const ovc = document.getElementById('ov');
+const ovx = ovc.getContext('2d');
 let last = performance.now(), acc = 0, fpsAvg = 60, statT = 0, degraded = 0, loggedErr = false;
 let wakeSmooth = 0;
 const FIXED = 1/60;
+
+/* 화면 위에 겹치는 손 뼈대 — 파문이 생기는 바로 그 자리에 손이 보이도록
+   파문과 똑같은 좌표 변환을 쓴다. 카메라가 돌면 뼈대도 함께 돈다. */
+function drawHandOverlay(){
+  ovx.clearRect(0, 0, lastW, lastH);
+  if (!T.skeleton || P.handMode !== 'skeleton' || !hands.length) return;
+  const w = lastW, h = lastH, asp = camAspect();
+  for (const hand of hands){
+    const px = hand.map(l => [ (P.mirror ? 1 - l.x : l.x) * w, (P.flipV ? l.y : 1 - l.y) * h ]);
+    const open = FINGERS.map(j => fingerStraightness(hand, j, asp) >= P.straight);
+
+    ovx.lineCap = 'round';
+    for (const pass of [[7.0, 'rgba(190,215,255,0.10)'], [1.6, 'rgba(232,240,255,0.55)']]){
+      ovx.lineWidth = pass[0]; ovx.strokeStyle = pass[1];
+      ovx.beginPath();
+      for (const [a, b] of HAND_BONES){
+        if (!px[a] || !px[b]) continue;
+        ovx.moveTo(px[a][0], px[a][1]); ovx.lineTo(px[b][0], px[b][1]);
+      }
+      ovx.stroke();
+    }
+    for (let i=0; i<px.length; i++){
+      const fi = TIPS.indexOf(i);
+      const live = fi >= 0 && open[fi];
+      if (live){
+        const r = 9 + Math.sin(clock*3 + i)*1.6;         // 반응하는 손끝은 숨쉬듯 고리를 그린다
+        ovx.strokeStyle = 'rgba(255,243,208,0.55)'; ovx.lineWidth = 1.4;
+        ovx.beginPath(); ovx.arc(px[i][0], px[i][1], r, 0, 6.2832); ovx.stroke();
+      }
+      ovx.fillStyle = live ? 'rgba(255,246,220,0.95)'
+                    : (fi >= 0 ? 'rgba(200,215,240,0.30)' : 'rgba(214,228,255,0.55)');
+      ovx.beginPath(); ovx.arc(px[i][0], px[i][1], live ? 3.6 : (fi >= 0 ? 2.2 : 1.8), 0, 6.2832); ovx.fill();
+    }
+  }
+}
 
 // 미리보기 — 웹캠 화면 위에 손 뼈대(방법 2) 또는 움직임 자국(방법 1)을 겹쳐 보여준다
 function drawPreview(){
@@ -1605,6 +1645,7 @@ function tick(now){
   gradePass.uniforms.uTime.value = clock;
 
   composer.render();
+  drawHandOverlay();
   if (P.showMotion) drawPreview();
 
   fpsAvg = fpsAvg*0.94 + (1/Math.max(dt,1e-4))*0.06;
@@ -1639,10 +1680,14 @@ function onResize(){
   camera.updateProjectionMatrix();
   renderer.setPixelRatio(dpr);
   renderer.setSize(w, h, false);          // CSS 크기는 위에서 직접 정한다
+  ovc.style.width = w + 'px'; ovc.style.height = h + 'px';
+  ovc.width = Math.round(w*dpr); ovc.height = Math.round(h*dpr);
+  ovx.setTransform(dpr, 0, 0, dpr, 0, 0);   // 이후로는 CSS 픽셀 좌표로 그린다
   composer.setPixelRatio(dpr);
   composer.setSize(w, h);
   bloom.setSize(w, h);
 }
+onResize();                                   // 관찰자는 화면이 그려질 때만 부르므로 처음 한 번은 직접
 addEventListener('resize', onResize);
 new ResizeObserver(onResize).observe(document.documentElement);
 if (window.visualViewport) visualViewport.addEventListener('resize', onResize);

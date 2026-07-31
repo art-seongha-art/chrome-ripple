@@ -62,7 +62,13 @@ button.b.on{background:rgba(217,180,92,.16);border-color:rgba(217,180,92,.45);co
 kbd{font:inherit;font-size:10px;background:rgba(255,255,255,.09);border:1px solid var(--ui-bd);
   border-radius:4px;padding:1px 4px;color:#c8c9cf}
 
-#mwrap{position:fixed;left:14px;top:14px;z-index:20;border:1px solid var(--ui-bd);border-radius:10px;
+#bar{position:fixed;left:14px;top:14px;z-index:25;display:flex;gap:7px}
+#bar button{font:inherit;font-size:11.5px;letter-spacing:.02em;color:var(--ui-fg);
+  background:var(--ui-bg);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border:1px solid var(--ui-bd);border-radius:9px;padding:7px 12px;cursor:pointer;outline:none}
+#bar button:hover{background:rgba(255,255,255,.12)}
+#bar button.on{background:rgba(217,180,92,.16);border-color:rgba(217,180,92,.45);color:#f0dca8}
+#mwrap{position:fixed;left:14px;top:60px;z-index:20;border:1px solid var(--ui-bd);border-radius:10px;
   overflow:hidden;background:rgba(14,15,18,.8);backdrop-filter:blur(10px)}
 #mwrap canvas{display:block;width:210px;height:158px}
 #mwrap .cap{font-size:9.5px;letter-spacing:.13em;color:var(--ui-dim);padding:4px 7px 5px;
@@ -86,6 +92,11 @@ kbd{font:inherit;font-size:10px;background:rgba(255,255,255,.09);border:1px soli
 <body>
 <canvas id="gl"></canvas>
 <canvas id="ov"></canvas>
+
+<div id="bar">
+  <button id="b_settings" title="설정 (H)">설정</button>
+  <button id="b_full" title="전체화면 (F)">전체화면</button>
+</div>
 <video id="cam" playsinline muted autoplay></video>
 
 <div id="title">
@@ -93,12 +104,12 @@ kbd{font:inherit;font-size:10px;background:rgba(255,255,255,.09);border:1px soli
   <span id="dims">김연 아트워크 — 2000 × 800 × 500 mm, stainless steel</span>
 </div>
 
-<div id="mwrap">
+<div id="mwrap" class="hidden">
   <canvas id="mcv" width="240" height="180"></canvas>
   <div class="cap"><span id="mlabel">웹캠</span><b id="menergy">0.00</b></div>
 </div>
 
-<div id="panel">
+<div id="panel" class="hidden">
   <div class="phead"><b>크롬 웨이브</b><span>CHROME WAVE</span></div>
   <div id="ctrls"></div>
   <div class="sec">
@@ -202,7 +213,7 @@ const P = {
   autoCam:    true,
   mirror:     true,
   flipV:      true,
-  showMotion: true,
+  showMotion: false,   // 웹캠 미리보기 — 처음엔 닫혀 있다
   idleSec:    20,
 };
 
@@ -937,9 +948,12 @@ function setWebcam(on){
   camnote.textContent = '웹캠 꺼짐 — 마우스와 무인 연주로 작동합니다.';
 }
 
+let camBusy = false;
 async function startCamera(){
-  if (!T.webcam) return;
+  if (!T.webcam || camBusy || camReady) return;
+  camBusy = true;
   if (!navigator.mediaDevices?.getUserMedia){
+    camBusy = false;
     camnote.textContent = '웹캠 없음 — 이 브라우저는 카메라를 지원하지 않습니다. 마우스와 무인 연주로 작동합니다.';
     return;
   }
@@ -947,9 +961,10 @@ async function startCamera(){
     video.srcObject = await navigator.mediaDevices.getUserMedia({
       video:{ width:{ideal:640}, height:{ideal:480}, facingMode:'user' }, audio:false });
     await video.play();
-    camReady = true;
+    camReady = true; camBusy = false;
     camnote.textContent = '웹캠 연결됨 — 카메라 앞에서 손을 움직이세요.';
   } catch (e){
+    camBusy = false;
     const secure = location.protocol === 'https:' ||
                    location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     camnote.textContent = secure
@@ -1464,6 +1479,14 @@ btn('b_flip').onclick   = ()=>{ P.flipV = !P.flipV; syncUI(); };
 btn('b_prev').onclick   = ()=>{ P.showMotion = !P.showMotion;
                                 btn('mwrap').classList.toggle('hidden', !P.showMotion); syncUI(); };
 btn('b_calm').onclick   = ()=>{ sim.clear(); fAcc.fill(0); mot.fill(0); motRaw.fill(0); };
+btn('b_settings').onclick = ()=>{
+  const open = btn('panel').classList.toggle('hidden') === false;
+  btn('b_settings').classList.toggle('on', open);
+};
+btn('b_full').onclick = ()=>{
+  document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+};
+addEventListener('fullscreenchange', ()=> btn('b_full').classList.toggle('on', !!document.fullscreenElement));
 rebuildSlab();                     // 형태를 처음 한 번 만든다 (치수 슬라이더가 다시 부른다)
 applyToggles(); syncUI(); syncModeUI();
 const wantEnv = P.env;
@@ -1472,7 +1495,10 @@ if (wantEnv !== 'room') setEnvironment(wantEnv);         // HDRI는 받는 대�
 
 addEventListener('keydown', (e)=>{
   const k = e.key.toLowerCase();
-  if (k === 'h') for (const id of ['panel','mwrap','title','stat']) btn(id).classList.toggle('hidden');
+  if (k === 'h'){
+    for (const id of ['panel','mwrap','title','stat','bar']) btn(id).classList.toggle('hidden');
+    btn('b_settings').classList.toggle('on', !btn('panel').classList.contains('hidden'));
+  }
   if (k === 'f') document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
   if (k === 'c'){ P.autoCam = !P.autoCam; if (P.autoCam){ shotFrom = {...rig}; shotT = 0; } syncUI(); }
   if (k === 'r'){ sim.clear(); fAcc.fill(0); }
@@ -1480,12 +1506,18 @@ addEventListener('keydown', (e)=>{
 });
 
 const veil = document.getElementById('veil');
-veil.addEventListener('click', ()=>{
+function dismissVeil(){
+  if (!veil.isConnected) return;
   P.autoCam = true; shotFrom = {...rig}; shotT = 0; syncUI();   // 시작은 언제나 자동 카메라부터
   veil.classList.add('gone');
-  setTimeout(()=>veil.remove(), 1000);
-  startCamera();
-}, { once:true });
+  setTimeout(()=>{ if (veil.isConnected) veil.remove(); }, 1000);
+}
+veil.addEventListener('click', dismissVeil);
+setTimeout(dismissVeil, 4000);                    // 인사말은 스스로 물러난다
+
+// 접속하면 바로 켠다. 브라우저가 몸짓을 요구해 막히면 첫 클릭에서 다시 시도한다.
+startCamera();
+addEventListener('pointerdown', ()=>{ if (!camReady) startCamera(); });
 
 /* ═══════════════════════════════════════════════════════════════════
    루프
